@@ -36,6 +36,7 @@ class Map;
 class TileEngine;
 class Pathfinding;
 class Mod;
+class FactionAI;
 class InfoboxOKState;
 class SoldierDiary;
 class RuleSkill;
@@ -143,6 +144,9 @@ private:
 	bool _endTurnRequested;
 	bool _endConfirmationHandled;
 	bool _allEnemiesNeutralized;
+	FactionAI *_playerAI;
+	FactionAI *_hostileAI;
+	FactionAI *_neutralAI;
 
 	helper::SingleRun _endTurnProcessed;
 	helper::SingleRun _triggerProcessed;
@@ -153,6 +157,8 @@ private:
 	bool handlePanickingPlayer();
 	/// Common function for handling panicking units.
 	bool handlePanickingUnit(BattleUnit *unit);
+	/// Gets faction-level AI controller.
+	FactionAI *getFactionAI(UnitFaction faction) const;
 	/// Determines whether there are any actions pending for the given unit.
 	bool noActionsPending(BattleUnit *bu);
 	std::vector<InfoboxOKState*> _infoboxQueue;

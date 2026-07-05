@@ -93,6 +93,8 @@ set ( battlescape_src
   Battlescape/ExplosionBState.cpp
   Battlescape/ExtendedBattlescapeLinksState.cpp
   Battlescape/ExtendedInventoryLinksState.cpp
+  Battlescape/FactionAI.cpp
+  Battlescape/HostileFactionAI.cpp
   Battlescape/InfoboxOKState.cpp
   Battlescape/InfoboxState.cpp
   Battlescape/Inventory.cpp
@@ -108,11 +110,13 @@ set ( battlescape_src
   Battlescape/MiniMapState.cpp
   Battlescape/MiniMapView.cpp
   Battlescape/NextTurnState.cpp
+  Battlescape/NeutralFactionAI.cpp
   Battlescape/NoExperienceState.cpp
   Battlescape/Particle.cpp
   Battlescape/Pathfinding.cpp
   Battlescape/PathfindingNode.cpp
   Battlescape/PathfindingOpenSet.cpp
+  Battlescape/PlayerFactionAI.cpp
   Battlescape/Position.cpp
   Battlescape/PrimeGrenadeState.cpp
   Battlescape/Projectile.cpp

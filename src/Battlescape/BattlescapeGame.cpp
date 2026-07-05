@@ -34,6 +34,7 @@
 #include "UnitDieBState.h"
 #include "UnitPanicBState.h"
 #include "AIModule.h"
+#include "FactionAI.h"
 #include "Pathfinding.h"
 #include "../Mod/AlienDeployment.h"
 #include "../Engine/Game.h"
@@ -244,7 +245,10 @@ bool BattleActionCost::spendTU(std::string *message)
 BattlescapeGame::BattlescapeGame(SavedBattleGame *save, BattlescapeState *parentState) :
 	_save(save), _parentState(parentState),
 	_playerPanicHandled(true), _AIActionCounter(0), _AISecondMove(false), _playedAggroSound(false),
-	_endTurnRequested(false), _endConfirmationHandled(false), _allEnemiesNeutralized(false)
+	_endTurnRequested(false), _endConfirmationHandled(false), _allEnemiesNeutralized(false),
+	_playerAI(new FactionAI(save, FACTION_PLAYER)),
+	_hostileAI(new FactionAI(save, FACTION_HOSTILE)),
+	_neutralAI(new FactionAI(save, FACTION_NEUTRAL))
 {
 	if (_save->isPreview())
 	{
@@ -273,6 +277,9 @@ BattlescapeGame::~BattlescapeGame()
 		delete bs;
 	}
 	cleanupDeleted();
+	delete _playerAI;
+	delete _hostileAI;
+	delete _neutralAI;
 }
 
 /**
@@ -368,6 +375,20 @@ void BattlescapeGame::init()
 	}
 }
 
+FactionAI *BattlescapeGame::getFactionAI(UnitFaction faction) const
+{
+	switch (faction)
+	{
+	case FACTION_PLAYER:
+		return _playerAI;
+	case FACTION_HOSTILE:
+		return _hostileAI;
+	case FACTION_NEUTRAL:
+		return _neutralAI;
+	default:
+		return _hostileAI;
+	}
+}
 
 /**
  * Handles the processing of the AI states of a unit.
@@ -419,13 +440,8 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 		// it should also hide units when they've killed the guy spotting them
 		// it's also for good luck
 
-	AIModule *ai = unit->getAIModule();
-	if (!ai)
-	{
-		// for some reason the unit had no AI routine assigned..
-		unit->setAIModule(new AIModule(_save, unit, 0));
-		ai = unit->getAIModule();
-	}
+	FactionAI *factionAI = getFactionAI(unit->getFaction());
+	AIModule *ai = factionAI->getUnitModule(unit);
 	_AIActionCounter++;
 	if (_AIActionCounter == 1)
 	{
@@ -447,7 +463,7 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 			<< ", action slot=" << _AIActionCounter;
 		_save->appendToAutoBattleLog(log.str());
 	}
-	unit->think(&action);
+	factionAI->think(unit, &action);
 
 	if (action.type == BA_RETHINK)
 	{
@@ -456,7 +472,7 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 		{
 			_save->appendToAutoBattleLog("AI decision: rethink requested because the initial plan was invalid or stale.");
 		}
-		unit->think(&action);
+		factionAI->think(unit, &action);
 	}
 
 	_AIActionCounter = action.number;
@@ -482,8 +498,8 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 		{
 			_save->appendToAutoBattleLog("AI decision: rethinking after picking up a weapon.");
 		}
-		unit->getAIModule()->setWeaponPickedUp();
-		unit->think(&action);
+		factionAI->setWeaponPickedUp(unit);
+		factionAI->think(unit, &action);
 	}
 
 	if (unit->getCharging() != 0)

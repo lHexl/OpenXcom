@@ -18,7 +18,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "../Engine/Yaml.h"
-#include "BattlescapeGame.h"
+#include "AIModule.h"
 #include "Position.h"
 #include "../Savegame/BattleUnit.h"
 #include <vector>
@@ -33,18 +33,10 @@ struct BattleAction;
 class BattlescapeState;
 class Node;
 
-enum AIMode { AI_PATROL, AI_AMBUSH, AI_COMBAT, AI_ESCAPE };
-enum AIAttackWeight : int
-{
-	/// Base scale of attack weights
-	AIW_SCALE = 100,
-	AIW_IGNORED = 0,
-};
-
 /**
  * This class is used by the BattleUnit AI.
  */
-class AIModule
+class NeutralFactionAI : public AIModule
 {
 protected:
 	SavedBattleGame *_save;
@@ -72,9 +64,9 @@ public:
 	virtual bool medikit_think(BattleMediKitType healOrStim);
 public:
 	/// Creates a new AIModule linked to the game and a certain unit.
-	AIModule(SavedBattleGame *save, BattleUnit *unit, Node *node);
+	NeutralFactionAI(SavedBattleGame *save, BattleUnit *unit, Node *node);
 	/// Cleans up the AIModule.
-	virtual ~AIModule();
+	virtual ~NeutralFactionAI();
 	/// Sets the target faction.
 	virtual void setTargetFaction(UnitFaction f);
 	/// Resets the unsaved AI state.
@@ -165,3 +157,4 @@ public:
 };
 
 }
+

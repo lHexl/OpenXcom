@@ -18,7 +18,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "../Engine/Yaml.h"
-#include "BattlescapeGame.h"
+#include "AIModule.h"
 #include "Position.h"
 #include "../Savegame/BattleUnit.h"
 #include <vector>
@@ -33,20 +33,12 @@ struct BattleAction;
 class BattlescapeState;
 class Node;
 
-enum AIMode { AI_PATROL, AI_AMBUSH, AI_COMBAT, AI_ESCAPE };
-enum AIAttackWeight : int
-{
-	/// Base scale of attack weights
-	AIW_SCALE = 100,
-	AIW_IGNORED = 0,
-};
-
 /**
  * This class is used by the BattleUnit AI.
  */
-class AIModule
+class HostileFactionAI : public AIModule
 {
-protected:
+private:
 	SavedBattleGame *_save;
 	BattleUnit *_unit;
 	BattleUnit *_aggroTarget;
@@ -69,38 +61,38 @@ protected:
 	void meleeActionLeeroy(bool canRun);
 	void dont_think(BattleAction *action);
 public:
-	virtual bool medikit_think(BattleMediKitType healOrStim);
+	bool medikit_think(BattleMediKitType healOrStim);
 public:
-	/// Creates a new AIModule linked to the game and a certain unit.
-	AIModule(SavedBattleGame *save, BattleUnit *unit, Node *node);
-	/// Cleans up the AIModule.
-	virtual ~AIModule();
+	/// Creates a new HostileFactionAI linked to the game and a certain unit.
+	HostileFactionAI(SavedBattleGame *save, BattleUnit *unit, Node *node);
+	/// Cleans up the HostileFactionAI.
+	~HostileFactionAI();
 	/// Sets the target faction.
-	virtual void setTargetFaction(UnitFaction f);
+	void setTargetFaction(UnitFaction f);
 	/// Resets the unsaved AI state.
-	virtual void reset();
+	void reset();
 	/// Loads the AI Module from YAML.
-	virtual void load(const YAML::YamlNodeReader& reader);
+	void load(const YAML::YamlNodeReader& reader);
 	/// Saves the AI Module to YAML.
-	virtual void save(YAML::YamlNodeWriter writer) const;
+	void save(YAML::YamlNodeWriter writer) const;
 	/// Runs Module functionality every AI cycle.
-	virtual void think(BattleAction *action);
+	void think(BattleAction *action);
 	/// Sets the "unit was hit" flag true.
-	virtual void setWasHitBy(BattleUnit *attacker);
+	void setWasHitBy(BattleUnit *attacker);
 	/// Sets the "unit picked up a weapon" flag.
-	virtual void setWeaponPickedUp();
+	void setWeaponPickedUp();
 	/// Gets whether the unit was hit.
-	virtual bool getWasHitBy(int attacker) const;
+	bool getWasHitBy(int attacker) const;
 	/// Gets current AI mode.
-	virtual int getAIMode() const { return _AIMode; }
+	int getAIMode() const { return _AIMode; }
 	/// Gets known enemy count.
-	virtual int getKnownEnemies() const { return _knownEnemies; }
+	int getKnownEnemies() const { return _knownEnemies; }
 	/// Gets visible enemy count.
-	virtual int getVisibleEnemies() const { return _visibleEnemies; }
+	int getVisibleEnemies() const { return _visibleEnemies; }
 	/// Gets how many enemies are spotting this unit.
-	virtual int getSpottingEnemies() const { return _spottingEnemies; }
+	int getSpottingEnemies() const { return _spottingEnemies; }
 	/// Set start node.
-	virtual void setStartNode(Node *node) { _fromNode = node; }
+	void setStartNode(Node *node) { _fromNode = node; }
 	/// setup a patrol objective.
 	void setupPatrol();
 	/// setup an ambush objective.
