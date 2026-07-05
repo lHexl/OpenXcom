@@ -1363,14 +1363,15 @@ factionRoomTacticsDone:
 		int reserveTU = 12;
 		if (action->weapon && action->weapon->getRules()->getBattleType() == BT_FIREARM)
 		{
-			reserveTU = 20;
+			reserveTU = (_visibleEnemies || _spottingEnemies) ? 20 : 12;
 			BattleActionCost snapCost(BA_SNAPSHOT, _unit, action->weapon);
 			if (snapCost.Time > 0)
 			{
-				reserveTU = std::max(reserveTU, (int)snapCost.Time);
+				reserveTU = std::max(reserveTU, (_visibleEnemies || _spottingEnemies) ? (int)snapCost.Time : (int)snapCost.Time / 2);
 			}
 		}
-		if (moveDistance * 6 > std::max(0, _unit->getTimeUnits() - reserveTU))
+		const int estimatedMoveTU = moveDistance * 5;
+		if (estimatedMoveTU > std::max(0, _unit->getTimeUnits() - reserveTU))
 		{
 			if (Options::autoBattleLog)
 			{
@@ -1379,7 +1380,7 @@ factionRoomTacticsDone:
 					<< " holds position to keep TU reserve"
 					<< ", target=" << action->target
 					<< ", moveDistance=" << moveDistance
-					<< ", estimatedMoveTU=" << moveDistance * 6
+					<< ", estimatedMoveTU=" << estimatedMoveTU
 					<< ", reserveTU=" << reserveTU
 					<< ", currentTU=" << _unit->getTimeUnits()
 					<< ", known=" << _knownEnemies
@@ -1605,7 +1606,7 @@ void PlayerFactionAI::setupPatrol()
 		{
 			const Position originalTarget = _patrolAction.target;
 			const Position currentPos = _unit->getPosition();
-			const int maxScoutDistance = _save->getTurn() <= 2 ? 6 : 8;
+			const int maxScoutDistance = _save->getTurn() <= 2 ? 4 : 5;
 			int bestScore = -100000;
 			Position bestPos = currentPos;
 			auto allyCrowdingPenalty = [&](const Position &pos) -> int
@@ -1867,6 +1868,10 @@ void PlayerFactionAI::setupAttack()
 		if (_rifle)
 		{
 			projectileAction();
+			if (_unit->getFaction() == FACTION_PLAYER && _attackAction.type == BA_RETHINK && _aggroTarget)
+			{
+				setupCleanShotMove(_aggroTarget);
+			}
 		}
 	}
 
@@ -3166,6 +3171,167 @@ bool PlayerFactionAI::findFirePoint()
 	return false;
 }
 
+bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
+{
+	if (_unit->getFaction() != FACTION_PLAYER || !target || target->isOut() || !_attackAction.weapon || _reachableWithAttack.empty())
+	{
+		return false;
+	}
+
+	const PlayerAIRole role = getPlayerAIRole(_attackAction.weapon);
+	const int preferredRange = getPreferredEngagementRange(_attackAction.weapon);
+	const int currentSpotters = getSpottingUnits(_unit->getPosition());
+	const int currentDist = Position::distance2d(_unit->getPosition(), target->getPosition());
+	const bool meleeRole = role == ROLE_MELEE || _attackAction.weapon->getRules()->getBattleType() == BT_MELEE;
+	int bestScore = -100000;
+	Position bestPos = _unit->getPosition();
+	int bestSpotters = currentSpotters;
+	int bestDist = currentDist;
+
+	for (auto tileIndex : _reachableWithAttack)
+	{
+		Tile *tile = _save->getTile(tileIndex);
+		if (!tile || tile->getDangerous() || (tile->getUnit() && tile->getUnit() != _unit))
+		{
+			continue;
+		}
+		Position pos = tile->getPosition();
+		if (pos.z != _unit->getPosition().z)
+		{
+			continue;
+		}
+
+		_save->getPathfinding()->calculate(_unit, pos, BAM_NORMAL);
+		const int moveTU = _save->getPathfinding()->getTotalTUCost();
+		const bool canMove = _save->getPathfinding()->getStartDirection() != -1;
+		_save->getPathfinding()->abortPath();
+		if (!canMove)
+		{
+			continue;
+		}
+
+		BattleActionCost snapCost(BA_SNAPSHOT, _unit, _attackAction.weapon);
+		const int reserveTU = meleeRole ? 8 : std::max(18, (int)snapCost.Time);
+		if (moveTU > std::max(0, _unit->getTimeUnits() - reserveTU))
+		{
+			continue;
+		}
+
+		Position origin = pos.toVoxel() + Position(8, 8, _unit->getHeight() + _unit->getFloatHeight() - tile->getTerrainLevel() - 4);
+		Position targetVoxel;
+		if (!meleeRole && !_save->getTileEngine()->canTargetUnit(&origin, target->getTile(), &targetVoxel, _unit, false, target))
+		{
+			continue;
+		}
+		bool allyInLane = false;
+		if (!meleeRole)
+		{
+			const double vx = (double)(target->getPosition().x - pos.x);
+			const double vy = (double)(target->getPosition().y - pos.y);
+			const double lenSq = vx * vx + vy * vy;
+			if (lenSq > 0.1)
+			{
+				for (auto *ally : *_save->getUnits())
+				{
+					if (!ally || ally == _unit || ally == target || ally->isOut() || ally->getFaction() != _unit->getFaction() || ally->getPosition().z != pos.z)
+					{
+						continue;
+					}
+					const double ax = (double)(ally->getPosition().x - pos.x);
+					const double ay = (double)(ally->getPosition().y - pos.y);
+					const double t = (ax * vx + ay * vy) / lenSq;
+					if (t <= 0.0 || t >= 1.05)
+					{
+						continue;
+					}
+					const double dx = ax - vx * t;
+					const double dy = ay - vy * t;
+					if (dx * dx + dy * dy <= 0.55)
+					{
+						allyInLane = true;
+						break;
+					}
+				}
+			}
+		}
+		if (allyInLane)
+		{
+			continue;
+		}
+
+		const int spotters = getSpottingUnits(pos);
+		if (spotters > currentSpotters && spotters > 0)
+		{
+			continue;
+		}
+		const int dist = Position::distance2d(pos, target->getPosition());
+		if (!meleeRole && dist < std::max(3, preferredRange - 5))
+		{
+			continue;
+		}
+
+		int cover = 0;
+		if (tile->getMapData(O_OBJECT))
+		{
+			cover += 8;
+		}
+		if (tile->getMapData(O_NORTHWALL))
+		{
+			cover += 6;
+		}
+		if (tile->getMapData(O_WESTWALL))
+		{
+			cover += 6;
+		}
+		int score = 220 - abs(dist - preferredRange) * (role == ROLE_MARKSMAN || role == ROLE_HEAVY ? 5 : 3);
+		score -= moveTU * 2;
+		score -= spotters * 45;
+		score += cover * 5;
+		if (spotters < currentSpotters)
+		{
+			score += 45;
+		}
+		if (dist >= currentDist && role == ROLE_MARKSMAN)
+		{
+			score += 20;
+		}
+		if (score > bestScore)
+		{
+			bestScore = score;
+			bestPos = pos;
+			bestSpotters = spotters;
+			bestDist = dist;
+		}
+	}
+
+	if (bestScore <= 90 || bestPos == _unit->getPosition())
+	{
+		return false;
+	}
+
+	_attackAction.actor = _unit;
+	_attackAction.weapon = _attackAction.weapon;
+	_attackAction.type = BA_WALK;
+	_attackAction.target = bestPos;
+	_attackAction.finalFacing = _save->getTileEngine()->getDirectionTo(bestPos, target->getPosition());
+	_AIMode = AI_COMBAT;
+	if (Options::autoBattleLog)
+	{
+		std::ostringstream log;
+		log << "Player faction clean shot move: unit=" << _unit->getId()
+			<< ", targetUnit=" << target->getId()
+			<< ", target=" << target->getPosition()
+			<< ", moveTarget=" << bestPos
+			<< ", score=" << bestScore
+			<< ", dist=" << bestDist
+			<< ", spotters=" << bestSpotters
+			<< ", role=" << (int)role
+			<< ", reason=free_fire_lane_and_keep_shot_reserve";
+		_save->appendToAutoBattleLog(log.str());
+	}
+	return true;
+}
+
 /**
  * Decides if it worth our while to create an explosion here.
  * Return value in same range as number affected targets but not equal exactly to that value.
@@ -3537,7 +3703,7 @@ bool PlayerFactionAI::directProjectileRiskyForAllies(BattleAction *action, Battl
 			const double dx = ax - vx * t;
 			const double dy = ay - vy * t;
 			const double lateralSq = dx * dx + dy * dy;
-			if (lateralSq <= 1.25)
+			if (lateralSq <= 0.55)
 			{
 				if (logRejection && Options::autoBattleLog)
 				{
@@ -3580,7 +3746,7 @@ bool PlayerFactionAI::directProjectileRiskyForAllies(BattleAction *action, Battl
 					continue;
 				}
 				if (ally->getPosition().z == tilePos.z
-					&& Position::distance2d(ally->getPosition(), tilePos) <= 1)
+					&& Position::distance2d(ally->getPosition(), tilePos) <= 0)
 				{
 					if (logRejection && Options::autoBattleLog)
 					{

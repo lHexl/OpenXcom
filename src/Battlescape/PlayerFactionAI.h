@@ -143,6 +143,7 @@ public:
 	void evaluateAIMode();
 	/// Selects a suitable position from which to attack.
 	bool findFirePoint();
+	bool setupCleanShotMove(BattleUnit *target);
 	/// Decides if we should throw a grenade/launch a missile to this position.
 	int explosiveEfficacy(Position targetPos, BattleUnit *attackingUnit, int radius, int diff, bool grenade = false) const;
 	bool explosiveProjectileRiskyForAllies(BattleAction *action, int radius, const Position *originPosition = 0, bool logRejection = true) const;

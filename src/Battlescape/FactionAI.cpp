@@ -647,7 +647,7 @@ int FactionAI::scoreAssignment(BattleUnit *actor, const PlayerFactionEnemyContac
 	score -= distance * 3;
 	if (std::find(contact.canShootBy.begin(), contact.canShootBy.end(), actor) != contact.canShootBy.end())
 	{
-		score += 80;
+		score += 110;
 	}
 	else if (std::find(contact.visibleBy.begin(), contact.visibleBy.end(), actor) != contact.visibleBy.end())
 	{
@@ -657,7 +657,9 @@ int FactionAI::scoreAssignment(BattleUnit *actor, const PlayerFactionEnemyContac
 	{
 		score -= 80;
 	}
-	score -= assignedCount * 55;
+	const bool wounded = contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= 35;
+	score += wounded ? 65 : 0;
+	score -= assignedCount * (wounded ? 25 : 35);
 	return score;
 }
 
@@ -763,7 +765,15 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 				continue;
 			}
 			const int assignedCount = assignedCountByEnemyId[contact.enemy->getId()];
-			const int maxAssignees = contact.enemy->getHealth() < 25 ? 1 : 2;
+			int maxAssignees = 2;
+			if (contact.threatScore >= 130 || contact.canShootBy.size() >= 2)
+			{
+				maxAssignees = 3;
+			}
+			if (contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= 35)
+			{
+				maxAssignees = 4;
+			}
 			if (assignedCount >= maxAssignees && !canShoot)
 			{
 				continue;
