@@ -41,6 +41,7 @@ public:
 	InfoboxOKState(const std::string &msg);
 	/// Cleans up the InfoboxOKState.
 	~InfoboxOKState();
+	void init() override;
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
 };

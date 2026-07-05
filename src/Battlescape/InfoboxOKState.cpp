@@ -80,6 +80,15 @@ InfoboxOKState::~InfoboxOKState()
 
 }
 
+void InfoboxOKState::init()
+{
+	State::init();
+	if (Options::autoBattle)
+	{
+		_game->popState();
+	}
+}
+
 /**
  * Returns to the previous screen.
  * @param action Pointer to an action.

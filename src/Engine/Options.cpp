@@ -261,6 +261,8 @@ void createAdvancedOptionsOXC()
 	_info.push_back(OptionInfo(OPTION_OXC, "includePrimeStateInSavedLayout", &includePrimeStateInSavedLayout, false, "STR_INCLUDE_PRIMESTATE_IN_SAVED_LAYOUT", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo(OPTION_OXC, "battleExplosionHeight", &battleExplosionHeight, 0, "STR_BATTLEEXPLOSIONHEIGHT", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo(OPTION_OXC, "battleAutoEnd", &battleAutoEnd, false, "STR_BATTLEAUTOEND", "STR_BATTLESCAPE"));
+	_info.push_back(OptionInfo(OPTION_OXCE, "autoBattle", &autoBattle, false));
+	_info.push_back(OptionInfo(OPTION_OXCE, "autoQuitAfterBattle", &autoQuitAfterBattle, false));
 	_info.push_back(OptionInfo(OPTION_OXC, "battleSmoothCamera", &battleSmoothCamera, false, "STR_BATTLESMOOTHCAMERA", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo(OPTION_OXC, "disableAutoEquip", &disableAutoEquip, false, "STR_DISABLEAUTOEQUIP", "STR_BATTLESCAPE"));
 #ifdef __MOBILE__
@@ -1248,6 +1250,12 @@ void updateOptions()
 	for (auto& optionInfo : _info)
 	{
 		optionInfo.load(_commandLine, true);
+	}
+
+	if (autoBattle)
+	{
+		battleAutoEnd = true;
+		skipNextTurnScreen = true;
 	}
 }
 

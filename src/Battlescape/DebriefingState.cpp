@@ -800,6 +800,11 @@ void DebriefingState::init()
 	{
 		_game->getMod()->playMusic(Mod::DEBRIEF_MUSIC_BAD);
 	}
+
+	if (Options::autoQuitAfterBattle)
+	{
+		_game->quit();
+	}
 }
 
 /**

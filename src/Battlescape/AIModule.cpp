@@ -60,7 +60,7 @@ AIModule::AIModule(SavedBattleGame *save, BattleUnit *unit, Node *node) :
 	_patrolAction = BattleAction();
 	_psiAction = BattleAction();
 	_targetFaction = FACTION_PLAYER;
-	if (_unit->getOriginalFaction() == FACTION_NEUTRAL)
+	if (_unit->getFaction() == FACTION_PLAYER || _unit->getOriginalFaction() == FACTION_NEUTRAL)
 	{
 		_targetFaction = FACTION_HOSTILE;
 	}

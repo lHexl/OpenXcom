@@ -218,19 +218,26 @@ int BattlescapeGame::think()
 	// nothing is happening - see if we need some alien AI or units panicking or what have you
 	if (_states.empty())
 	{
+		bool autoPlayingPlayer = Options::autoBattle && _save->getSide() == FACTION_PLAYER;
 		if (_save->getUnitsFalling())
 		{
 			statePushFront(new UnitFallBState(this));
 			_save->setUnitsFalling(false);
 			return ret;
 		}
-		// it's a non player side (ALIENS or CIVILIANS)
-		if (_save->getSide() != FACTION_PLAYER)
+		// it's a non player side (ALIENS or CIVILIANS), or the player side is running on autopilot
+		if (_save->getSide() != FACTION_PLAYER || autoPlayingPlayer)
 		{
 			auto sideBackup = _save->getSide();
 			_save->resetUnitHitStates();
 			if (!_debugPlay)
 			{
+				if (autoPlayingPlayer && !_playerPanicHandled)
+				{
+					_playerPanicHandled = handlePanickingPlayer();
+					_save->getBattleState()->updateSoldierInfo();
+					return ret;
+				}
 				if (_save->getSelectedUnit())
 				{
 					if (!handlePanickingUnit(_save->getSelectedUnit()))
@@ -336,7 +343,10 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 		return;
 	}
 
-	unit->setVisible(false); //Possible TODO: check number of player unit observers, then hide the unit if no one can see it. Should then be able to skip the next FOV call.
+	if (unit->getFaction() != FACTION_PLAYER)
+	{
+		unit->setVisible(false); //Possible TODO: check number of player unit observers, then hide the unit if no one can see it. Should then be able to skip the next FOV call.
+	}
 
 	_save->getTileEngine()->calculateFOV(unit->getPosition(), 1, false); // might need this populate _visibleUnit for a newly-created alien.
 		// it might also help chryssalids realize they've zombified someone and need to move on
