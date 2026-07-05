@@ -354,3 +354,43 @@ The player faction AI is improved when:
 - wounded units retreat or avoid exposed tiles;
 - logs clearly explain why each unit acted.
 
+## Loss-Minimization Focus
+
+The next development priority is not just winning the battle, but reducing X-COM casualties. Hard saves like `1.sav` have weak armor and weak weapons, so a single exposed move can cost a soldier.
+
+Immediate tactical goals:
+
+- Prefer keeping a soldier alive over taking a low-value shot.
+- Avoid moving into tiles that known enemies can see or shoot.
+- Avoid "repositioning while enemies are visible" unless the move creates an immediate shot with enough remaining TU.
+- Prefer positions where other allies can support the soldier.
+- Do not use explosive or arcing attacks when allies are in the blast area or likely trajectory.
+- Avoid shooting when the line of fire is likely to cross an allied unit.
+- Concentrate fire from the safest available shooters first, then stop exposing additional units once the target is likely dead.
+
+Concrete next changes:
+
+1. Add danger scoring for candidate movement tiles using enemy spotting/line-of-fire checks.
+2. Use this danger score in support movement and `findFirePoint()`.
+3. Reject support moves into enemy-spotted tiles unless there is no safer way to keep the unit useful.
+4. Make firepoint movement require low exposure after the move, especially for weakly armored soldiers.
+5. Add structured log lines for danger decisions: selected position, enemy spotters, reason accepted/rejected.
+6. Add friendly-fire checks for direct shots and explosive trajectories.
+7. Add end-of-turn survival logic: if no good shot exists, hold/kneel/reserve instead of moving under threat.
+
+Explosive weapon safety:
+
+- Use the weapon/ammo explosion radius from item rules instead of hardcoded rocket values.
+- Estimate the actual projectile origin, target voxel, central trajectory impact, and several deviation samples derived from the soldier's current firing accuracy and weapon range limits.
+- Reject player-faction explosive shots when the central path crosses an ally or detonates on the shooter.
+- Treat spread/blast danger as a sampled risk, not as a blanket ban on every possible miss.
+- Current `1.sav` finding: the old winning run depended on a rocket that killed its own shooter. Blocking that self-hit prevents friendly fire, but the faction then loses too much tempo. Next work should add safe repositioning and stronger focus-fire so the team can win without suicide rockets.
+
+Stalking, Rooms, And Ambushes:
+
+- Track enemy contact zones at faction level, but do not run expensive room flood-fill inside every unit action. The first attempt caused instability during repeated planning in the same turn.
+- Use a safer room approximation first: group recently seen enemies by local sectors or cached connected zones, then refine later.
+- A first `stalk ambush` action was added for player units with known-but-not-visible enemies. It scores same-level reachable tiles by distance to contact, enemy spotters, and nearby cover.
+- Testing showed that loose ambush movement increases enemy shots and worsens `1.sav`. Current thresholds are intentionally strict, so the behavior is available but does not fire unless the tile is clearly better.
+- Next iteration should add persistent contact memory: last seen position, turn seen, number of allies who saw it, and whether enemies were clustered there.
+- For room entry, assign roles at faction level: spotter near doorway, shooters in covered overwatch positions, and only then advance one unit.

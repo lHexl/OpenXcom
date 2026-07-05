@@ -26,13 +26,54 @@
 #include "../Engine/Options.h"
 #include "../Savegame/BattleItem.h"
 #include "../Savegame/SavedBattleGame.h"
+#include "../Savegame/Tile.h"
+#include "../Mod/MapData.h"
+#include "Pathfinding.h"
 #include <algorithm>
+#include <cstdint>
+#include <fstream>
+#include <queue>
 #include <sstream>
 
 namespace OpenXcom
 {
 
-FactionAI::FactionAI(SavedBattleGame *save, UnitFaction faction) : _save(save), _faction(faction)
+namespace
+{
+
+std::string factionAIJsonEscape(const std::string &value)
+{
+	std::ostringstream escaped;
+	for (char c : value)
+	{
+		switch (c)
+		{
+		case '\\':
+			escaped << "\\\\";
+			break;
+		case '"':
+			escaped << "\\\"";
+			break;
+		case '\n':
+			escaped << "\\n";
+			break;
+		case '\r':
+			escaped << "\\r";
+			break;
+		case '\t':
+			escaped << "\\t";
+			break;
+		default:
+			escaped << c;
+			break;
+		}
+	}
+	return escaped.str();
+}
+
+}
+
+FactionAI::FactionAI(SavedBattleGame *save, UnitFaction faction) : _save(save), _faction(faction), _roomCacheSignature(0)
 {
 	_playerPlan.turn = -1;
 	_playerPlan.cycle = 0;
@@ -157,7 +198,367 @@ int FactionAI::getEnemyContactCount() const
 	return (int)_playerPlan.enemies.size();
 }
 
+unsigned long long FactionAI::calculateRoomCacheSignature() const
+{
+	unsigned long long signature = 1469598103934665603ull;
+	signature ^= (unsigned long long)_save->getMapSizeXYZ();
+	signature *= 1099511628211ull;
+	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
+	{
+		const Tile *tile = _save->getTile(i);
+		for (int part = O_FLOOR; part < O_MAX; ++part)
+		{
+			signature ^= (unsigned long long)(reinterpret_cast<std::uintptr_t>(tile->getMapData((TilePart)part)) + part * 104729);
+			signature *= 1099511628211ull;
+		}
+	}
+	return signature;
+}
+
+void FactionAI::ensureRoomCache() const
+{
+	const unsigned long long signature = calculateRoomCacheSignature();
+	if (_roomIdByTile.empty() || _roomCacheSignature != signature)
+	{
+		rebuildRoomCache(signature);
+	}
+}
+
+int FactionAI::getRoomId(Position pos) const
+{
+	ensureRoomCache();
+	const Tile *tile = _save->getTile(pos);
+	if (!tile)
+	{
+		return -1;
+	}
+	return _roomIdByTile[_save->getTileIndex(pos)];
+}
+
+const BattleRoomInfo *FactionAI::getRoomInfo(int roomId) const
+{
+	ensureRoomCache();
+	if (roomId < 0 || roomId >= (int)_roomInfos.size())
+	{
+		return 0;
+	}
+	return &_roomInfos[roomId];
+}
+
+void FactionAI::rebuildRoomCache(unsigned long long signature) const
+{
+	_roomIdByTile.assign(_save->getMapSizeXYZ(), -1);
+	_roomInfos.clear();
+
+	auto isRoomTile = [&](const Tile *tile) -> bool
+	{
+		return tile && !tile->hasNoFloor(_save);
+	};
+
+	auto boundaryPart = [&](const Position &pos, int dir, Position *nextPos) -> TilePart
+	{
+		*nextPos = pos;
+		switch (dir)
+		{
+		case 0: nextPos->y -= 1; return O_NORTHWALL;
+		case 2: nextPos->x += 1; return O_WESTWALL;
+		case 4: nextPos->y += 1; return O_NORTHWALL;
+		case 6: nextPos->x -= 1; return O_WESTWALL;
+		default: return O_OBJECT;
+		}
+	};
+
+	auto boundaryTile = [&](const Position &pos, int dir) -> const Tile*
+	{
+		if (dir == 0 || dir == 6)
+		{
+			return _save->getTile(pos);
+		}
+		Position nextPos;
+		boundaryPart(pos, dir, &nextPos);
+		return _save->getTile(nextPos);
+	};
+
+	auto bigWallBlocks = [&](const Tile *tile, int dir) -> bool
+	{
+		const MapData *object = tile ? tile->getMapData(O_OBJECT) : 0;
+		if (!object || !object->getBigWall())
+		{
+			return false;
+		}
+		int bigWall = object->getBigWall();
+		if (bigWall == Pathfinding::BLOCK)
+		{
+			return true;
+		}
+		if (dir == 0)
+			return bigWall == Pathfinding::BIGWALLNORTH || bigWall == Pathfinding::BIGWALLWESTANDNORTH;
+		if (dir == 2)
+			return bigWall == Pathfinding::BIGWALLEAST || bigWall == Pathfinding::BIGWALLEASTANDSOUTH;
+		if (dir == 4)
+			return bigWall == Pathfinding::BIGWALLSOUTH || bigWall == Pathfinding::BIGWALLEASTANDSOUTH;
+		if (dir == 6)
+			return bigWall == Pathfinding::BIGWALLWEST || bigWall == Pathfinding::BIGWALLWESTANDNORTH;
+		return false;
+	};
+
+	auto classifyBoundary = [&](const Position &pos, int dir, bool *door, bool *window) -> bool
+	{
+		*door = false;
+		*window = false;
+		Position nextPos;
+		TilePart part = boundaryPart(pos, dir, &nextPos);
+		const Tile *tile = boundaryTile(pos, dir);
+		const Tile *fromTile = _save->getTile(pos);
+		const Tile *toTile = _save->getTile(nextPos);
+		if (!tile || !fromTile || !toTile || !isRoomTile(toTile))
+		{
+			return true;
+		}
+		if (bigWallBlocks(fromTile, dir) || bigWallBlocks(toTile, (dir + 4) % 8))
+		{
+			return true;
+		}
+		if (fromTile->isDoor(O_OBJECT) || fromTile->isUfoDoor(O_OBJECT) || toTile->isDoor(O_OBJECT) || toTile->isUfoDoor(O_OBJECT))
+		{
+			*door = true;
+			return true;
+		}
+		const MapData *wall = tile->getMapData(part);
+		if (!wall)
+		{
+			return false;
+		}
+		*door = tile->isDoor(part) || tile->isUfoDoor(part);
+		*window = !*door && wall->getBlock(DT_NONE) == 0;
+		return true;
+	};
+
+	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
+	{
+		if (_roomIdByTile[i] != -1)
+		{
+			continue;
+		}
+		const Tile *start = _save->getTile(i);
+		if (!isRoomTile(start))
+		{
+			continue;
+		}
+
+		BattleRoomInfo info;
+		info.id = (int)_roomInfos.size();
+		std::queue<Position> open;
+		open.push(start->getPosition());
+		_roomIdByTile[i] = info.id;
+
+		auto addEntryPosition = [&](const Position &entryPos)
+		{
+			if (std::find(info.entryPositions.begin(), info.entryPositions.end(), entryPos) == info.entryPositions.end())
+			{
+				info.entryPositions.push_back(entryPos);
+			}
+		};
+
+		while (!open.empty())
+		{
+			Position pos = open.front();
+			open.pop();
+			++info.tileCount;
+			if (pos.x == 0 || pos.y == 0 || pos.x == _save->getMapSizeX() - 1 || pos.y == _save->getMapSizeY() - 1)
+			{
+				info.touchesMapEdge = true;
+			}
+
+			for (int dir = 0; dir < 8; dir += 2)
+			{
+				Position nextPos;
+				boundaryPart(pos, dir, &nextPos);
+				const Tile *nextTile = _save->getTile(nextPos);
+				bool door = false;
+				bool window = false;
+				bool blocked = classifyBoundary(pos, dir, &door, &window);
+				if (door)
+				{
+					++info.doorCount;
+					if (nextTile && isRoomTile(nextTile))
+					{
+						addEntryPosition(nextPos);
+					}
+				}
+				else if (window)
+				{
+					++info.windowCount;
+					if (nextTile && isRoomTile(nextTile))
+					{
+						addEntryPosition(nextPos);
+					}
+				}
+				else if (!blocked)
+				{
+					++info.openingCount;
+				}
+				if (blocked || !isRoomTile(nextTile))
+				{
+					continue;
+				}
+				int nextIndex = _save->getTileIndex(nextPos);
+				if (_roomIdByTile[nextIndex] == -1)
+				{
+					_roomIdByTile[nextIndex] = info.id;
+					open.push(nextPos);
+				}
+			}
+		}
+		info.isOutside = info.touchesMapEdge && info.tileCount >= 48;
+		info.isHall = !info.isOutside && (info.tileCount >= 120 || (info.tileCount >= 80 && info.openingCount + info.windowCount >= info.tileCount * 2));
+		_roomInfos.push_back(info);
+	}
+
+	_roomCacheSignature = signature;
+	if (Options::autoBattleLog)
+	{
+		std::ostringstream log;
+		log << "FactionAI room cache rebuilt: faction=" << (int)_faction
+			<< ", signature=" << _roomCacheSignature
+			<< ", rooms=" << _roomInfos.size();
+		_save->appendToAutoBattleLog(log.str());
+	}
+	if (_faction == FACTION_PLAYER)
+	{
+		writeBattleMapLog();
+	}
+}
+
+void FactionAI::writeBattleMapLog() const
+{
+	if (!Options::autoBattleLog || _roomIdByTile.empty())
+	{
+		return;
+	}
+
+	std::string path = _save->getAutoBattleLogTextPath();
+	const std::string suffix = ".txt";
+	if (path.size() >= suffix.size() && path.substr(path.size() - suffix.size()) == suffix)
+	{
+		path = path.substr(0, path.size() - suffix.size());
+	}
+	path += "-map.json";
+
+	std::ofstream file(path);
+	if (!file)
+	{
+		return;
+	}
+
+	file << "{\n";
+	file << "\"schema\":\"oxce-auto-battle-map-v1\",\n";
+	file << "\"turn\":" << _save->getTurn() << ",\n";
+	file << "\"side\":" << (int)_save->getSide() << ",\n";
+	file << "\"signature\":" << _roomCacheSignature << ",\n";
+	file << "\"map\":{\"x\":" << _save->getMapSizeX()
+		<< ",\"y\":" << _save->getMapSizeY()
+		<< ",\"z\":" << _save->getMapSizeZ() << "},\n";
+
+	file << "\"rooms\":[\n";
+	for (size_t i = 0; i < _roomInfos.size(); ++i)
+	{
+		const BattleRoomInfo &room = _roomInfos[i];
+		if (i)
+		{
+			file << ",\n";
+		}
+		file << "{\"id\":" << room.id
+			<< ",\"tiles\":" << room.tileCount
+			<< ",\"doors\":" << room.doorCount
+			<< ",\"windows\":" << room.windowCount
+			<< ",\"openings\":" << room.openingCount
+			<< ",\"touches_edge\":" << (room.touchesMapEdge ? "true" : "false")
+			<< ",\"outside\":" << (room.isOutside ? "true" : "false")
+			<< ",\"hall\":" << (room.isHall ? "true" : "false")
+			<< ",\"entries\":[";
+		for (size_t entryIndex = 0; entryIndex < room.entryPositions.size(); ++entryIndex)
+		{
+			const Position &entry = room.entryPositions[entryIndex];
+			if (entryIndex)
+			{
+				file << ",";
+			}
+			file << "[" << entry.x << "," << entry.y << "," << entry.z << "]";
+		}
+		file << "]}";
+	}
+	file << "\n],\n";
+
+	file << "\"units\":[\n";
+	bool firstUnit = true;
+	for (auto *unit : *_save->getUnits())
+	{
+		if (!unit)
+		{
+			continue;
+		}
+		if (!firstUnit)
+		{
+			file << ",\n";
+		}
+		firstUnit = false;
+		const Position pos = unit->getPosition();
+		file << "{\"id\":" << unit->getId()
+			<< ",\"type\":\"" << factionAIJsonEscape(unit->getType()) << "\""
+			<< ",\"faction\":" << (int)unit->getFaction()
+			<< ",\"out\":" << (unit->isOut() ? "true" : "false")
+			<< ",\"pos\":[" << pos.x << "," << pos.y << "," << pos.z << "]"
+			<< ",\"room\":" << (unit->getTile() ? _roomIdByTile[_save->getTileIndex(pos)] : -1)
+			<< ",\"tu\":" << unit->getTimeUnits()
+			<< ",\"health\":" << unit->getHealth()
+			<< ",\"stun\":" << unit->getStunlevel()
+			<< "}";
+	}
+	file << "\n],\n";
+
+	file << "\"tiles\":[\n";
+	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
+	{
+		Tile *tile = _save->getTile(i);
+		const Position pos = tile->getPosition();
+		if (i)
+		{
+			file << ",\n";
+		}
+		file << "{\"i\":" << i
+			<< ",\"pos\":[" << pos.x << "," << pos.y << "," << pos.z << "]"
+			<< ",\"room\":" << _roomIdByTile[i]
+			<< ",\"no_floor\":" << (tile->hasNoFloor(_save) ? "true" : "false")
+			<< ",\"danger\":" << (tile->getDangerous() ? "true" : "false")
+			<< ",\"parts\":[";
+		for (int part = O_FLOOR; part < O_MAX; ++part)
+		{
+			int mapDataId = -1;
+			int mapDataSetId = -1;
+			tile->getMapData(&mapDataId, &mapDataSetId, (TilePart)part);
+			if (part != O_FLOOR)
+			{
+				file << ",";
+			}
+			file << "[" << mapDataSetId << "," << mapDataId << "]";
+		}
+		file << "]}";
+	}
+	file << "\n]\n";
+	file << "}\n";
+
+	std::ostringstream log;
+	log << "FactionAI map snapshot written: " << path;
+	_save->appendToAutoBattleLog(log.str());
+}
+
 bool FactionAI::getBestEnemyContactPosition(Position *position) const
+{
+	return getBestEnemyContactPosition(position, 0, 0);
+}
+
+bool FactionAI::getBestEnemyContactPosition(Position *position, const BattleRoomInfo **roomInfo, int *enemiesInRoom) const
 {
 	if (!position || _playerPlan.enemies.empty())
 	{
@@ -179,6 +580,14 @@ bool FactionAI::getBestEnemyContactPosition(Position *position) const
 		return false;
 	}
 	*position = bestContact->enemy->getPosition();
+	if (roomInfo)
+	{
+		*roomInfo = getRoomInfo(bestContact->roomId);
+	}
+	if (enemiesInRoom)
+	{
+		*enemiesInRoom = bestContact->enemiesInRoom;
+	}
 	return true;
 }
 
@@ -283,6 +692,23 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 		contact.enemy = enemy;
 		contact.threatScore = scoreEnemyThreat(enemy);
 		contact.focusScore = 0;
+		contact.roomId = getRoomId(enemy->getPosition());
+		contact.roomSize = 0;
+		contact.roomDoors = 0;
+		contact.roomWindows = 0;
+		contact.roomOpenings = 0;
+		contact.roomOutside = false;
+		contact.roomHall = false;
+		contact.enemiesInRoom = 1;
+		if (const BattleRoomInfo *room = getRoomInfo(contact.roomId))
+		{
+			contact.roomSize = room->tileCount;
+			contact.roomDoors = room->doorCount;
+			contact.roomWindows = room->windowCount;
+			contact.roomOpenings = room->openingCount;
+			contact.roomOutside = room->isOutside;
+			contact.roomHall = room->isHall;
+		}
 		for (auto* ally : _playerPlan.allies)
 		{
 			if (canSeeEnemy(ally, enemy))
@@ -298,6 +724,28 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 		{
 			contact.focusScore = 20 * (int)contact.visibleBy.size() + 35 * (int)contact.canShootBy.size();
 			_playerPlan.enemies.push_back(contact);
+		}
+	}
+
+	std::map<int, int> enemiesByRoom;
+	for (const auto &contact : _playerPlan.enemies)
+	{
+		enemiesByRoom[contact.roomId]++;
+	}
+	for (auto &contact : _playerPlan.enemies)
+	{
+		contact.enemiesInRoom = enemiesByRoom[contact.roomId];
+		if (!contact.roomOutside && !contact.roomHall)
+		{
+			contact.threatScore += 20 + std::max(0, contact.enemiesInRoom - 1) * 45;
+			if (contact.roomDoors + contact.roomWindows <= 2)
+			{
+				contact.threatScore += 20;
+			}
+		}
+		else if (contact.roomHall)
+		{
+			contact.threatScore += std::max(0, contact.enemiesInRoom - 1) * 20;
 		}
 	}
 
@@ -335,6 +783,14 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 			reason << "score=" << bestScore
 				<< ", threat=" << bestContact->threatScore
 				<< ", focus=" << bestContact->focusScore
+				<< ", room=" << bestContact->roomId
+				<< ", roomEnemies=" << bestContact->enemiesInRoom
+				<< ", roomSize=" << bestContact->roomSize
+				<< ", doors=" << bestContact->roomDoors
+				<< ", windows=" << bestContact->roomWindows
+				<< ", entries=" << (getRoomInfo(bestContact->roomId) ? getRoomInfo(bestContact->roomId)->entryPositions.size() : 0)
+				<< ", outside=" << bestContact->roomOutside
+				<< ", hall=" << bestContact->roomHall
 				<< ", visibleBy=" << bestContact->visibleBy.size()
 				<< ", canShootBy=" << bestContact->canShootBy.size()
 				<< ", assignedCount=" << assignedCountByEnemyId[bestContact->enemy->getId()];
@@ -364,6 +820,15 @@ void FactionAI::logPlayerPlan() const
 			<< ", pos=" << contact.enemy->getPosition()
 			<< ", threat=" << contact.threatScore
 			<< ", focus=" << contact.focusScore
+			<< ", room=" << contact.roomId
+			<< ", roomEnemies=" << contact.enemiesInRoom
+			<< ", roomSize=" << contact.roomSize
+			<< ", doors=" << contact.roomDoors
+			<< ", windows=" << contact.roomWindows
+			<< ", openings=" << contact.roomOpenings
+			<< ", entries=" << (getRoomInfo(contact.roomId) ? getRoomInfo(contact.roomId)->entryPositions.size() : 0)
+			<< ", outside=" << contact.roomOutside
+			<< ", hall=" << contact.roomHall
 			<< ", visibleBy=" << contact.visibleBy.size()
 			<< ", canShootBy=" << contact.canShootBy.size();
 		_save->appendToAutoBattleLog(line.str());

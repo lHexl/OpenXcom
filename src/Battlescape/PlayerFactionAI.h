@@ -30,6 +30,7 @@ namespace OpenXcom
 class SavedBattleGame;
 class BattleUnit;
 class FactionAI;
+struct BattleRoomInfo;
 struct BattleAction;
 class BattlescapeState;
 class Node;
@@ -51,6 +52,7 @@ private:
 	int _AIMode, _intelligence, _closestDist;
 	Node *_fromNode, *_toNode;
 	bool _foundBaseModuleToDestroy;
+	bool _stalkAmbushAction;
 	std::vector<int> _reachable, _reachableWithAttack, _wasHitBy;
 	BattleActionType _reserve;
 	UnitFaction _targetFaction;
@@ -62,6 +64,7 @@ private:
 	int selectNearestTargetLeeroy(bool canRun);
 	void meleeActionLeeroy(bool canRun);
 	void dont_think(BattleAction *action);
+	bool setupFactionStalkAmbush(const Position &contactPos, const BattleRoomInfo *contactRoom, int enemiesInRoom, BattleItem *weapon);
 public:
 	bool medikit_think(BattleMediKitType healOrStim);
 public:
@@ -127,6 +130,7 @@ public:
 	bool findFirePoint();
 	/// Decides if we should throw a grenade/launch a missile to this position.
 	int explosiveEfficacy(Position targetPos, BattleUnit *attackingUnit, int radius, int diff, bool grenade = false) const;
+	bool explosiveProjectileRiskyForAllies(BattleAction *action, int radius, const Position *originPosition = 0, bool logRejection = true) const;
 	bool getNodeOfBestEfficacy(BattleAction *action, int radius);
 	/// Attempts to take a melee attack/charge an enemy we can see.
 	void meleeAction();

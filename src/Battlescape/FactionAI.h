@@ -29,6 +29,19 @@ class AIModule;
 class SavedBattleGame;
 struct BattleAction;
 
+struct BattleRoomInfo
+{
+	int id = -1;
+	int tileCount = 0;
+	int doorCount = 0;
+	int windowCount = 0;
+	int openingCount = 0;
+	bool touchesMapEdge = false;
+	bool isOutside = false;
+	bool isHall = false;
+	std::vector<Position> entryPositions;
+};
+
 struct PlayerFactionEnemyContact
 {
 	BattleUnit *enemy;
@@ -36,6 +49,14 @@ struct PlayerFactionEnemyContact
 	std::vector<BattleUnit*> canShootBy;
 	int threatScore;
 	int focusScore;
+	int roomId;
+	int roomSize;
+	int roomDoors;
+	int roomWindows;
+	int roomOpenings;
+	bool roomOutside;
+	bool roomHall;
+	int enemiesInRoom;
 };
 
 struct PlayerFactionPlan
@@ -60,8 +81,17 @@ private:
 	SavedBattleGame *_save;
 	UnitFaction _faction;
 	mutable PlayerFactionPlan _playerPlan;
+	mutable unsigned long long _roomCacheSignature;
+	mutable std::vector<int> _roomIdByTile;
+	mutable std::vector<BattleRoomInfo> _roomInfos;
 
 	void buildPlayerPlan(BattleUnit *activeUnit) const;
+	unsigned long long calculateRoomCacheSignature() const;
+	void ensureRoomCache() const;
+	void rebuildRoomCache(unsigned long long signature) const;
+	void writeBattleMapLog() const;
+	int getRoomId(Position pos) const;
+	const BattleRoomInfo *getRoomInfo(int roomId) const;
 	bool canSeeEnemy(BattleUnit *actor, BattleUnit *enemy) const;
 	bool canShootEnemy(BattleUnit *actor, BattleUnit *enemy) const;
 	int scoreEnemyThreat(BattleUnit *enemy) const;
@@ -77,6 +107,10 @@ public:
 	std::string getAssignmentReason(BattleUnit *unit) const;
 	int getEnemyContactCount() const;
 	bool getBestEnemyContactPosition(Position *position) const;
+	bool getBestEnemyContactPosition(Position *position, const BattleRoomInfo **roomInfo, int *enemiesInRoom) const;
+	int getRoomIdAt(Position pos) const { return getRoomId(pos); }
+	const BattleRoomInfo *getRoomInfoAt(Position pos) const { return getRoomInfo(getRoomId(pos)); }
+	const std::vector<BattleRoomInfo> &getKnownRooms() const { ensureRoomCache(); return _roomInfos; }
 	UnitFaction getFaction() const { return _faction; }
 };
 
