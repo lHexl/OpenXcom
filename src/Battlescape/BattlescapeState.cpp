@@ -107,6 +107,10 @@ BattlescapeState::BattlescapeState() :
 	_numberOfDirectlyVisibleUnits(0), _numberOfEnemiesTotal(0), _numberOfEnemiesTotalPlusWounded(0)
 {
 	_save = _game->getSavedGame()->getSavedBattle();
+	if (Options::autoBattle && !_save->getDebugMode())
+	{
+		_save->setDebugMode();
+	}
 
 	std::fill_n(_visibleUnit, 10, (BattleUnit*)(0));
 

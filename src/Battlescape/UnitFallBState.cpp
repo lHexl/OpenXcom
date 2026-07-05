@@ -55,6 +55,11 @@ UnitFallBState::~UnitFallBState()
 void UnitFallBState::init()
 {
 	_terrain = _parent->getTileEngine();
+	if (Options::autoBattle)
+	{
+		_parent->setStateInterval(0);
+		return;
+	}
 	if (_parent->getSave()->getSide() == FACTION_PLAYER)
 		_parent->setStateInterval(Options::battleXcomSpeed);
 	else
@@ -87,7 +92,11 @@ void UnitFallBState::think()
 
 		if (unit->getStatus() == STATUS_WALKING || unit->getStatus() == STATUS_FLYING)
 		{
-			unit->keepWalking(_parent->getSave(), true); // advances the phase
+			do
+			{
+				unit->keepWalking(_parent->getSave(), Options::autoBattle ? false : true); // advances the phase
+			}
+			while (Options::autoBattle && (unit->getStatus() == STATUS_WALKING || unit->getStatus() == STATUS_FLYING));
 
 			++unitIt;
 			continue;

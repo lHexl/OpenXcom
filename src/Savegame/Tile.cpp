@@ -22,6 +22,7 @@
 #include "../Mod/MapDataSet.h"
 #include "../Engine/SurfaceSet.h"
 #include "../Engine/Surface.h"
+#include "../Engine/Options.h"
 #include "../Engine/RNG.h"
 #include "../Engine/ScriptBind.h"
 #include "BattleUnit.h"
@@ -393,7 +394,7 @@ int Tile::openDoor(TilePart part, BattleUnit *unit, BattleActionType reserve, bo
 	{
 		if (unit && cost.Time && !cost.haveTU())
 			return 4;
-		_objectsCache[part].currentFrame = 1; // start opening door
+		_objectsCache[part].currentFrame = Options::autoBattle ? 7 : 1; // start opening door, or skip it in autobattle
 		updateSprite((TilePart)part);
 		return 1;
 	}

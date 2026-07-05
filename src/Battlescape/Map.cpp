@@ -33,6 +33,7 @@
 #include "../Engine/Language.h"
 #include "../Engine/Palette.h"
 #include "../Engine/Game.h"
+#include "../Engine/Options.h"
 #include "../Engine/Screen.h"
 #include "../Engine/ShaderDraw.h"
 #include "../Engine/ShaderMove.h"
@@ -356,7 +357,7 @@ void Map::draw()
 		}
 	}
 
-	if ((_save->getSelectedUnit() && _save->getSelectedUnit()->getVisible()) || _unitDying || _save->getSide() == FACTION_PLAYER || _save->getDebugMode() || _projectileInFOV || _explosionInFOV)
+	if ((_save->getSelectedUnit() && _save->getSelectedUnit()->getVisible()) || _unitDying || _save->getSide() == FACTION_PLAYER || _save->getDebugMode() || Options::autoBattle || _projectileInFOV || _explosionInFOV)
 	{
 		drawTerrain(this);
 	}

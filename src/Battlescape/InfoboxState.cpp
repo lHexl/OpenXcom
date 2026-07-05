@@ -22,6 +22,7 @@
 #include "../Interface/Text.h"
 #include "../Interface/Frame.h"
 #include "../Engine/Action.h"
+#include "../Engine/Options.h"
 #include "../Savegame/SavedGame.h"
 #include "../Savegame/SavedBattleGame.h"
 
@@ -99,6 +100,11 @@ void InfoboxState::handle(Action *action)
  */
 void InfoboxState::think()
 {
+	if (Options::autoBattle)
+	{
+		close();
+		return;
+	}
 	_timer->think(this, 0);
 }
 

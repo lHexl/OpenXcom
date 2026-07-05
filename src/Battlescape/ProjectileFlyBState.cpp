@@ -454,7 +454,7 @@ bool ProjectileFlyBState::createNewProjectile()
 	_parent->getMap()->setProjectile(projectile);
 
 	// set the speed of the state think cycle to 16 ms (roughly one think cycle per frame)
-	_parent->setStateInterval(1000/60);
+	_parent->setStateInterval(Options::autoBattle ? 0 : 1000/60);
 
 	// let it calculate a trajectory
 	_projectileImpact = V_EMPTY;
@@ -654,9 +654,9 @@ void ProjectileFlyBState::think()
 	else
 	{
 		BattleActionAttack attack = BattleActionAttack::GetAferShoot(_action, _ammo);
-		if (_action.type != BA_THROW && _ammo && _ammo->getRules()->getShotgunPellets() != 0)
+		if (Options::autoBattle || (_action.type != BA_THROW && _ammo && _ammo->getRules()->getShotgunPellets() != 0))
 		{
-			// shotgun pellets move to their terminal location instantly as fast as possible
+			// shotgun pellets and autobattle shots move to their terminal location instantly.
 			_parent->getMap()->getProjectile()->skipTrajectory();
 		}
 		if (!_parent->getMap()->getProjectile()->move())

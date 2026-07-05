@@ -59,7 +59,9 @@ void UnitTurnBState::init()
 		return;
 	}
 	_action.clearTU();
-	if (_unit->getFaction() == FACTION_PLAYER)
+	if (Options::autoBattle)
+		_parent->setStateInterval(0);
+	else if (_unit->getFaction() == FACTION_PLAYER)
 		_parent->setStateInterval(Options::battleXcomSpeed);
 	else
 		_parent->setStateInterval(Options::battleAlienSpeed);
@@ -109,8 +111,12 @@ void UnitTurnBState::think()
 	if (_unit->spendTimeUnits(tu))
 	{
 		size_t unitSpotted = _unit->getUnitsSpottedThisTurn().size();
-		_unit->turn(_turret);
-		_parent->getTileEngine()->calculateFOV(_unit);
+		do
+		{
+			_unit->turn(_turret);
+			_parent->getTileEngine()->calculateFOV(_unit);
+		}
+		while (Options::autoBattle && _unit->getStatus() == STATUS_TURNING);
 		if (_chargeTUs && _unit->getFaction() == _parent->getSave()->getSide() && _parent->getPanicHandled() && _action.type == BA_NONE && _unit->getUnitsSpottedThisTurn().size() > unitSpotted)
 		{
 			_unit->abortTurn();

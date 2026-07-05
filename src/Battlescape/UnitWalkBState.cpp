@@ -143,8 +143,15 @@ void UnitWalkBState::think()
 			(_parent->getSave()->getTile(_unit->getDestination())->getUnit() == _unit))
 		{
 			bool onScreenBoundary = (_unit->getVisible() && _parent->getMap()->getCamera()->isOnScreen(_unit->getPosition(), true, size, true));
-			_unit->keepWalking(_parent->getSave(), onScreenBoundary); // advances the phase
-			playMovementSound();
+			do
+			{
+				_unit->keepWalking(_parent->getSave(), Options::autoBattle ? false : onScreenBoundary); // advances the phase
+				if (!Options::autoBattle)
+				{
+					playMovementSound();
+				}
+			}
+			while (Options::autoBattle && (_unit->getStatus() == STATUS_WALKING || _unit->getStatus() == STATUS_FLYING));
 			if (_parent->getSave()->isPreview())
 			{
 				_unit->resetTimeUnitsAndEnergy();
@@ -349,7 +356,10 @@ void UnitWalkBState::think()
 				if (door == 1)
 				{
 					_parent->getMod()->getSoundByDepth(_parent->getDepth(), Mod::SLIDING_DOOR_OPEN)->play(-1, _parent->getMap()->getSoundAngle(_unit->getPosition())); // ufo door
-					return; // don't start walking yet, wait for the ufo door to open
+					if (!Options::autoBattle)
+					{
+						return; // don't start walking yet, wait for the ufo door to open
+					}
 				}
 			}
 			for (int x = size; x >= 0; --x)
@@ -518,6 +528,11 @@ void UnitWalkBState::postPathProcedures()
  */
 void UnitWalkBState::setNormalWalkSpeed()
 {
+	if (Options::autoBattle)
+	{
+		_parent->setStateInterval(0);
+		return;
+	}
 	if (_unit->getFaction() == FACTION_PLAYER)
 		_parent->setStateInterval(Options::battleXcomSpeed);
 	else

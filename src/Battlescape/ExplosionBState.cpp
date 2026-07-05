@@ -31,6 +31,7 @@
 #include "../Mod/RuleItem.h"
 #include "../Mod/Armor.h"
 #include "../Engine/RNG.h"
+#include "../Engine/Options.h"
 
 namespace OpenXcom
 {
@@ -381,6 +382,17 @@ void ExplosionBState::think()
 {
 	if (!_parent->getMap()->getBlastFlash())
 	{
+		if (Options::autoBattle)
+		{
+			for (auto* explosion : *_parent->getMap()->getExplosions())
+			{
+				delete explosion;
+			}
+			_parent->getMap()->getExplosions()->clear();
+			explode();
+			return;
+		}
+
 		if (_parent->getMap()->getExplosions()->empty())
 			explode();
 
