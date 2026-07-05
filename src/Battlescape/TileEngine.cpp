@@ -21,6 +21,7 @@
 #include <sstream>
 #include "TileEngine.h"
 #include "AIModule.h"
+#include "PlayerFactionAI.h"
 #include "Map.h"
 #include "Camera.h"
 #include "Projectile.h"
@@ -2833,6 +2834,20 @@ bool TileEngine::tryReaction(ReactionScore *reaction, BattleUnit *target, const 
 	if (ammo && action.haveTU())
 	{
 		action.targeting = true;
+		if (unit->getFaction() == FACTION_PLAYER)
+		{
+			if (!dynamic_cast<PlayerFactionAI*>(unit->getAIModule()))
+			{
+				unit->setAIModule(new PlayerFactionAI(_save, unit, 0));
+			}
+			if (PlayerFactionAI *playerAI = dynamic_cast<PlayerFactionAI*>(unit->getAIModule()))
+			{
+				if (playerAI->projectileRiskyForAllies(&action, target))
+				{
+					action.targeting = false;
+				}
+			}
+		}
 
 		// hostile units will go into an "aggro" state when they react.
 		if (unit->getFaction() == FACTION_HOSTILE)

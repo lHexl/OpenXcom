@@ -41,6 +41,15 @@ class Node;
 class PlayerFactionAI : public AIModule
 {
 private:
+	enum PlayerAIRole
+	{
+		ROLE_SUPPORT,
+		ROLE_ASSAULT,
+		ROLE_MARKSMAN,
+		ROLE_HEAVY,
+		ROLE_MELEE
+	};
+
 	SavedBattleGame *_save;
 	BattleUnit *_unit;
 	BattleUnit *_aggroTarget;
@@ -65,6 +74,12 @@ private:
 	void meleeActionLeeroy(bool canRun);
 	void dont_think(BattleAction *action);
 	bool setupFactionStalkAmbush(const Position &contactPos, const BattleRoomInfo *contactRoom, int enemiesInRoom, BattleItem *weapon);
+	PlayerAIRole getPlayerAIRole(BattleItem *weapon) const;
+	int getPreferredEngagementRange(BattleItem *weapon) const;
+	int scoreWeaponForUnit(BattleItem *weapon) const;
+	BattleItem *selectBestCarriedWeapon() const;
+	bool tryEquipGroundWeapon(BattleItem *item);
+	bool setupRoleWeaponPickup(BattleAction *action);
 public:
 	bool medikit_think(BattleMediKitType healOrStim);
 public:
@@ -132,6 +147,8 @@ public:
 	int explosiveEfficacy(Position targetPos, BattleUnit *attackingUnit, int radius, int diff, bool grenade = false) const;
 	bool explosiveProjectileRiskyForAllies(BattleAction *action, int radius, const Position *originPosition = 0, bool logRejection = true) const;
 	bool directProjectileRiskyForAllies(BattleAction *action, BattleUnit *target, bool logRejection = true) const;
+	bool autoShotRiskyForAllies(BattleAction *action, BattleUnit *target, bool logRejection = true) const;
+	bool projectileRiskyForAllies(BattleAction *action, BattleUnit *target, bool logRejection = true) const;
 	bool getNodeOfBestEfficacy(BattleAction *action, int radius);
 	/// Attempts to take a melee attack/charge an enemy we can see.
 	void meleeAction();
