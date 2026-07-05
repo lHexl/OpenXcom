@@ -17,6 +17,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <algorithm>
+#include <sstream>
 #include "ProjectileFlyBState.h"
 #include "ExplosionBState.h"
 #include "Projectile.h"
@@ -581,6 +582,20 @@ bool ProjectileFlyBState::createNewProjectile()
 
 	if (_action.type != BA_THROW && _action.type != BA_LAUNCH)
 		_unit->getStatistics()->shotsFiredCounter++;
+
+	if (Options::autoBattleLog)
+	{
+		std::ostringstream log;
+		log << "Projectile: unit #" << _action.actor->getId() << " " << _action.actor->getType()
+			<< " action=" << (int)_action.type
+			<< " weapon=" << (_action.weapon ? _action.weapon->getRules()->getType() : "none")
+			<< " from " << _origin
+			<< " targetTile=" << _action.target
+			<< " targetVoxel=" << _targetVoxel
+			<< " impact=" << _projectileImpact
+			<< " autoShot=" << _action.autoShotCounter;
+		_parent->getSave()->appendToAutoBattleLog(log.str());
+	}
 
 	// hit log - new bullet
 	if (_action.actor)

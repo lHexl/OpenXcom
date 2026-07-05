@@ -18,6 +18,7 @@
  */
 #include <assert.h>
 #include <set>
+#include <sstream>
 #include "TileEngine.h"
 #include "AIModule.h"
 #include "Map.h"
@@ -3149,6 +3150,21 @@ bool TileEngine::hitUnit(BattleActionAttack attack, BattleUnit *target, const Po
 
 	const int healthDamage = healthOrig - target->getHealth();
 	const int stunDamage = target->getStunlevel() - stunLevelOrig;
+
+	if (Options::autoBattleLog && attack.attacker)
+	{
+		std::ostringstream log;
+		log << "Hit unit: attacker #" << attack.attacker->getId() << " " << attack.attacker->getType()
+			<< " -> target #" << target->getId() << " " << target->getType()
+			<< " at " << target->getPosition()
+			<< ", relative=" << relative
+			<< ", power=" << damage
+			<< ", health damage=" << healthDamage
+			<< ", stun damage=" << stunDamage
+			<< ", target HP=" << target->getHealth()
+			<< ", stun=" << target->getStunlevel();
+		_save->appendToAutoBattleLog(log.str());
+	}
 
 	// hit log
 	if (attack.attacker)

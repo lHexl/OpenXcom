@@ -17,6 +17,10 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <assert.h>
+#include <SDL.h>
+#include <chrono>
+#include <fstream>
+#include <sstream>
 #include <vector>
 #include "BattleItem.h"
 #include "ItemContainer.h"
@@ -57,6 +61,148 @@
 
 namespace OpenXcom
 {
+
+namespace
+{
+
+const char *autoBattleLogFaction(UnitFaction faction)
+{
+	switch (faction)
+	{
+	case FACTION_PLAYER:
+		return "XCOM";
+	case FACTION_HOSTILE:
+		return "HOSTILE";
+	case FACTION_NEUTRAL:
+		return "NEUTRAL";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+const char *autoBattleLogEntry(HitLogEntryType type)
+{
+	switch (type)
+	{
+	case HITLOG_NEW_TURN:
+		return "new turn";
+	case HITLOG_NEW_TURN_WITH_MESSAGE:
+		return "new turn";
+	case HITLOG_PLAYER_FIRING:
+		return "firing";
+	case HITLOG_REACTION_FIRE:
+		return "reaction fire";
+	case HITLOG_NEW_SHOT:
+		return "shot";
+	case HITLOG_NO_DAMAGE:
+		return "no damage";
+	case HITLOG_SMALL_DAMAGE:
+		return "small damage";
+	case HITLOG_BIG_DAMAGE:
+		return "big damage";
+	default:
+		return "event";
+	}
+}
+
+std::string autoBattleJsonEscape(const std::string &value)
+{
+	std::ostringstream escaped;
+	for (char c : value)
+	{
+		switch (c)
+		{
+		case '\\':
+			escaped << "\\\\";
+			break;
+		case '"':
+			escaped << "\\\"";
+			break;
+		case '\n':
+			escaped << "\\n";
+			break;
+		case '\r':
+			escaped << "\\r";
+			break;
+		case '\t':
+			escaped << "\\t";
+			break;
+		default:
+			escaped << c;
+			break;
+		}
+	}
+	return escaped.str();
+}
+
+void appendAutoBattleJsonLine(const std::string &json)
+{
+	if (!Options::autoBattleLog)
+	{
+		return;
+	}
+
+	std::ofstream file(Options::getUserFolder() + "auto-battle-log.jsonl", std::ios::app);
+	if (!file)
+	{
+		return;
+	}
+
+	static long long lastNs = 0;
+	const Uint32 ticks = SDL_GetTicks();
+	const long long steadyNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+	const double dtMs = lastNs ? ((double)(steadyNs - lastNs) / 1000000.0) : 0.0;
+	lastNs = steadyNs;
+
+	std::string enriched = json;
+	if (!enriched.empty() && enriched.back() == '}')
+	{
+		enriched.pop_back();
+		std::ostringstream timing;
+		timing << ",\"ticks_ms\":" << ticks
+			<< ",\"steady_ns\":" << steadyNs
+			<< ",\"dt_ms\":" << dtMs
+			<< "}";
+		enriched += timing.str();
+	}
+
+	file << enriched << "\n";
+}
+
+void appendAutoBattleLog(HitLogEntryType type, UnitFaction faction, const std::string &text = std::string())
+{
+	if (!Options::autoBattleLog)
+	{
+		return;
+	}
+
+	std::ofstream file(Options::getUserFolder() + "auto-battle-log.txt", std::ios::app);
+	if (!file)
+	{
+		return;
+	}
+
+	file << "[" << autoBattleLogFaction(faction) << "] " << autoBattleLogEntry(type);
+	if (!text.empty())
+	{
+		file << ": " << text;
+	}
+	file << "\n";
+
+	std::ostringstream json;
+	json << "{\"event\":\"hitlog\""
+		<< ",\"type\":\"" << autoBattleJsonEscape(autoBattleLogEntry(type)) << "\""
+		<< ",\"faction\":\"" << autoBattleLogFaction(faction) << "\"";
+	if (!text.empty())
+	{
+		json << ",\"text\":\"" << autoBattleJsonEscape(text) << "\"";
+	}
+	json << "}";
+	appendAutoBattleJsonLine(json.str());
+}
+
+}
 
 /**
  * Initializes a brand new battlescape saved game.
@@ -3393,8 +3539,9 @@ const std::string& SavedBattleGame::getHiddenMovementBackground() const
  */
 void SavedBattleGame::appendToHitLog(HitLogEntryType type, UnitFaction faction)
 {
-	if (_side != FACTION_PLAYER) return;
+	if (_side != FACTION_PLAYER && !Options::autoBattleLog) return;
 	_hitLog->appendToHitLog(type, faction);
+	appendAutoBattleLog(type, faction);
 }
 
 /**
@@ -3402,8 +3549,29 @@ void SavedBattleGame::appendToHitLog(HitLogEntryType type, UnitFaction faction)
  */
 void SavedBattleGame::appendToHitLog(HitLogEntryType type, UnitFaction faction, const std::string &text)
 {
-	if (_side != FACTION_PLAYER) return;
+	if (_side != FACTION_PLAYER && !Options::autoBattleLog) return;
 	_hitLog->appendToHitLog(type, faction, text);
+	appendAutoBattleLog(type, faction, text);
+}
+
+void SavedBattleGame::appendToAutoBattleLog(const std::string &text) const
+{
+	if (!Options::autoBattleLog)
+	{
+		return;
+	}
+
+	std::ofstream file(Options::getUserFolder() + "auto-battle-log.txt", std::ios::app);
+	if (!file)
+	{
+		return;
+	}
+
+	file << text << "\n";
+
+	std::ostringstream json;
+	json << "{\"event\":\"detail\",\"message\":\"" << autoBattleJsonEscape(text) << "\"}";
+	appendAutoBattleJsonLine(json.str());
 }
 
 /**

@@ -91,6 +91,14 @@ public:
 	void setWeaponPickedUp();
 	/// Gets whether the unit was hit.
 	bool getWasHitBy(int attacker) const;
+	/// Gets current AI mode.
+	int getAIMode() const { return _AIMode; }
+	/// Gets known enemy count.
+	int getKnownEnemies() const { return _knownEnemies; }
+	/// Gets visible enemy count.
+	int getVisibleEnemies() const { return _visibleEnemies; }
+	/// Gets how many enemies are spotting this unit.
+	int getSpottingEnemies() const { return _spottingEnemies; }
 	/// Set start node.
 	void setStartNode(Node *node) { _fromNode = node; }
 	/// setup a patrol objective.

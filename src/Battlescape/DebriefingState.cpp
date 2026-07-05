@@ -17,8 +17,10 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <climits>
+#include <fstream>
 #include "TileEngine.h"
 #include "DebriefingState.h"
 #include "CannotReequipState.h"
@@ -63,6 +65,7 @@
 #include "../Interface/Cursor.h"
 #include "../Engine/Exception.h"
 #include "../Engine/Options.h"
+#include "../Engine/CrossPlatform.h"
 #include "../Engine/RNG.h"
 #include "../Basescape/ManageAlienContainmentState.h"
 #include "../Basescape/TransferBaseState.h"
@@ -77,6 +80,41 @@
 
 namespace OpenXcom
 {
+
+namespace
+{
+
+std::string autoBattleJsonEscape(const std::string &value)
+{
+	std::ostringstream escaped;
+	for (char c : value)
+	{
+		switch (c)
+		{
+		case '\\':
+			escaped << "\\\\";
+			break;
+		case '"':
+			escaped << "\\\"";
+			break;
+		case '\n':
+			escaped << "\\n";
+			break;
+		case '\r':
+			escaped << "\\r";
+			break;
+		case '\t':
+			escaped << "\\t";
+			break;
+		default:
+			escaped << c;
+			break;
+		}
+	}
+	return escaped.str();
+}
+
+}
 
 /**
  * Initializes all the elements in the Debriefing screen.
@@ -376,6 +414,94 @@ void DebriefingState::applyVisibility()
 	else if (showItems)
 	{
 		_btnStats->setText(tr("STR_SCORE"));
+	}
+}
+
+void DebriefingState::writeAutoBattleLog(int total, const std::string &rating, SavedBattleGame *battle)
+{
+	if (!Options::autoBattleLog)
+	{
+		return;
+	}
+
+	std::ofstream file(Options::getUserFolder() + "auto-battle-log.txt", std::ios::app);
+	if (!file)
+	{
+		return;
+	}
+
+	file << "\n=== Result ===\n";
+	file << "Finished: " << CrossPlatform::now() << "\n";
+	file << "Outcome: " << (_missionStatistics->success ? "success" : "failure") << "\n";
+	file << "Score: " << total << "\n";
+	file << "Rating: " << std::string(tr(rating)) << "\n";
+
+	file << "\nScore stats:\n";
+	for (const auto* ds : _stats)
+	{
+		if (ds->qty == 0)
+		{
+			continue;
+		}
+		file << "- " << std::string(tr(ds->item)) << ": qty=" << ds->qty << ", score=" << ds->score << "\n";
+	}
+
+	file << "\nSoldier stat changes:\n";
+	for (const auto& sse : _soldierStats)
+	{
+		file << "- " << sse.first
+			<< ": TU " << makeSoldierString(sse.second.tu)
+			<< ", stamina " << makeSoldierString(sse.second.stamina)
+			<< ", health " << makeSoldierString(sse.second.health)
+			<< ", bravery " << makeSoldierString(sse.second.bravery)
+			<< ", reactions " << makeSoldierString(sse.second.reactions)
+			<< ", firing " << makeSoldierString(sse.second.firing)
+			<< ", throwing " << makeSoldierString(sse.second.throwing)
+			<< ", melee " << makeSoldierString(sse.second.melee)
+			<< ", strength " << makeSoldierString(sse.second.strength)
+			<< ", psi strength " << makeSoldierString(sse.second.psiStrength)
+			<< ", psi skill " << makeSoldierString(sse.second.psiSkill)
+			<< "\n";
+	}
+
+	file << "\nRecovered items:\n";
+	if (_recoveredItems.empty())
+	{
+		file << "- none\n";
+	}
+	else
+	{
+		for (const auto& item : _recoveredItems)
+		{
+			file << "- " << std::string(tr(item.first->getType())) << ": " << item.second << "\n";
+		}
+	}
+
+	if (battle)
+	{
+		file << "\nFinal side: " << battle->getSide() << "\n";
+		file << "Final turn: " << battle->getTurn() << "\n";
+	}
+
+	std::ofstream jsonFile(Options::getUserFolder() + "auto-battle-log.jsonl", std::ios::app);
+	if (jsonFile)
+	{
+		const Uint32 ticks = SDL_GetTicks();
+		const long long steadyNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+		jsonFile << "{\"event\":\"result\""
+			<< ",\"time\":\"" << CrossPlatform::now() << "\""
+			<< ",\"success\":" << (_missionStatistics->success ? "true" : "false")
+			<< ",\"score\":" << total
+			<< ",\"rating\":\"" << autoBattleJsonEscape(std::string(tr(rating))) << "\""
+			<< ",\"ticks_ms\":" << ticks
+			<< ",\"steady_ns\":" << steadyNs;
+		if (battle)
+		{
+			jsonFile << ",\"final_side\":" << battle->getSide()
+				<< ",\"final_turn\":" << battle->getTurn();
+		}
+		jsonFile << "}\n";
 	}
 }
 
@@ -789,6 +915,8 @@ void DebriefingState::init()
 	{
 		_promotions = _game->getSavedGame()->handlePromotions(participants, _game->getMod());
 	}
+
+	writeAutoBattleLog(total, rating, battle);
 
 	_game->getSavedGame()->setBattleGame(0);
 

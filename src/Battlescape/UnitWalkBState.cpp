@@ -17,6 +17,7 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <sstream>
 #include "UnitWalkBState.h"
 #include "MeleeAttackBState.h"
 #include "TileEngine.h"
@@ -205,6 +206,15 @@ void UnitWalkBState::think()
 		{
 			// update the TU display
 			_parent->getSave()->getBattleState()->updateSoldierInfo();
+			if (Options::autoBattleLog)
+			{
+				std::ostringstream log;
+				log << "Move end: unit #" << _unit->getId() << " " << _unit->getType()
+					<< " now at " << _unit->getPosition()
+					<< ", remaining TU=" << _unit->getTimeUnits()
+					<< ", energy=" << _unit->getEnergy();
+				_parent->getSave()->appendToAutoBattleLog(log.str());
+			}
 			// if the unit burns floor tiles, burn floor tiles as long as we're not falling
 			if (!_falling && (_unit->getSpecialAbility() == SPECAB_BURNFLOOR || _unit->getSpecialAbility() == SPECAB_BURN_AND_EXPLODE))
 			{
@@ -386,6 +396,17 @@ void UnitWalkBState::think()
 			{
 				if (_unit->spendEnergy(energy))
 				{
+					if (Options::autoBattleLog)
+					{
+						std::ostringstream log;
+						log << "Move start: unit #" << _unit->getId() << " " << _unit->getType()
+							<< " from " << _unit->getPosition()
+							<< " to " << destination
+							<< ", dir=" << dir
+							<< ", TU cost=" << tu
+							<< ", energy cost=" << energy;
+						_parent->getSave()->appendToAutoBattleLog(log.str());
+					}
 					_unit->startWalking(dir, destination, _parent->getSave());
 					_beforeFirstStep = false;
 				}

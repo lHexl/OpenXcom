@@ -38,6 +38,7 @@ class Country;
 class RuleItem;
 class RuleEvent;
 class BattleUnit;
+class SavedBattleGame;
 struct UnitStats;
 
 struct DebriefingStat {
@@ -106,6 +107,8 @@ private:
 	void applyVisibility();
 	/// Creates a string for the soldier stats table from a stat difference value
 	std::string makeSoldierString(int stat);
+	/// Writes the auto battle log result.
+	void writeAutoBattleLog(int total, const std::string &rating, SavedBattleGame *battle);
 public:
 	/// Creates the Debriefing state.
 	DebriefingState();

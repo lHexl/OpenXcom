@@ -63,6 +63,72 @@
 namespace OpenXcom
 {
 
+namespace
+{
+
+const char *autoBattleActionName(BattleActionType type)
+{
+	switch (type)
+	{
+	case BA_NONE:
+		return "idle";
+	case BA_WALK:
+		return "walk";
+	case BA_THROW:
+		return "throw";
+	case BA_AUTOSHOT:
+		return "auto shot";
+	case BA_SNAPSHOT:
+		return "snap shot";
+	case BA_AIMEDSHOT:
+		return "aimed shot";
+	case BA_HIT:
+		return "melee";
+	case BA_USE:
+		return "use";
+	case BA_LAUNCH:
+		return "launch";
+	case BA_MINDCONTROL:
+		return "mind control";
+	case BA_PANIC:
+		return "panic";
+	case BA_RETHINK:
+		return "rethink";
+	default:
+		return "action";
+	}
+}
+
+const char *autoBattleAIModeName(int mode)
+{
+	switch (mode)
+	{
+	case AI_PATROL:
+		return "Patrol";
+	case AI_AMBUSH:
+		return "Ambush";
+	case AI_COMBAT:
+		return "Combat";
+	case AI_ESCAPE:
+		return "Escape";
+	default:
+		return "Unknown";
+	}
+}
+
+std::string autoBattleUnitLabel(BattleUnit *unit)
+{
+	if (!unit)
+	{
+		return "unit <null>";
+	}
+	std::ostringstream ss;
+	ss << "unit #" << unit->getId() << " " << unit->getType() << " at " << unit->getPosition();
+	return ss.str();
+}
+
+}
+
 bool BattlescapeGame::_debugPlay = false;
 
 /**
@@ -371,11 +437,25 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 	BattleAction action;
 	action.actor = unit;
 	action.number = _AIActionCounter;
+	if (Options::autoBattleLog)
+	{
+		std::ostringstream log;
+		log << "\nAI thinking: " << autoBattleUnitLabel(unit)
+			<< ", TU=" << unit->getTimeUnits()
+			<< ", energy=" << unit->getEnergy()
+			<< ", visible enemies=" << unit->getVisibleUnits()->size()
+			<< ", action slot=" << _AIActionCounter;
+		_save->appendToAutoBattleLog(log.str());
+	}
 	unit->think(&action);
 
 	if (action.type == BA_RETHINK)
 	{
 		_parentState->debug("Rethink");
+		if (Options::autoBattleLog)
+		{
+			_save->appendToAutoBattleLog("AI decision: rethink requested because the initial plan was invalid or stale.");
+		}
 		unit->think(&action);
 	}
 
@@ -398,6 +478,10 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 	{
 		// you have just picked up a weapon... use it if you can!
 		_parentState->debug("Re-Rethink");
+		if (Options::autoBattleLog)
+		{
+			_save->appendToAutoBattleLog("AI decision: rethinking after picking up a weapon.");
+		}
 		unit->getAIModule()->setWeaponPickedUp();
 		unit->think(&action);
 	}
@@ -414,6 +498,30 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 	{
 		ss << "Walking to " << action.target;
 		_parentState->debug(ss.str());
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "AI decision: " << autoBattleUnitLabel(unit)
+				<< " chose walk to " << action.target
+				<< ". Why: mode=" << autoBattleAIModeName(ai->getAIMode())
+				<< ", known=" << ai->getKnownEnemies()
+				<< ", visible=" << ai->getVisibleEnemies()
+				<< ", spotting=" << ai->getSpottingEnemies()
+				<< "; ";
+			if (walkToItem)
+			{
+				log << "moving toward a useful dropped item.";
+			}
+			else if (!unit->getVisibleUnits()->empty())
+			{
+				log << "repositioning while enemies are visible.";
+			}
+			else
+			{
+				log << "patrolling/searching because no immediate shot was selected.";
+			}
+			_save->appendToAutoBattleLog(log.str());
+		}
 
 		auto* targetTile = _save->getTile(action.target);
 		if (targetTile)
@@ -436,6 +544,31 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 		ss.clear();
 		ss << "Attack type=" << action.type << " target="<< action.target << " weapon=" << action.weapon->getRules()->getType();
 		_parentState->debug(ss.str());
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "AI decision: " << autoBattleUnitLabel(unit)
+				<< " chose " << autoBattleActionName(action.type)
+				<< " at " << action.target;
+			if (action.weapon)
+			{
+				log << " with " << action.weapon->getRules()->getType();
+			}
+			log << ". Why: mode=" << autoBattleAIModeName(ai->getAIMode())
+				<< ", known=" << ai->getKnownEnemies()
+				<< ", visible=" << ai->getVisibleEnemies()
+				<< ", spotting=" << ai->getSpottingEnemies()
+				<< "; ";
+			if (!unit->getVisibleUnits()->empty())
+			{
+				log << "enemy target is visible or known and the selected attack was affordable.";
+			}
+			else
+			{
+				log << "attack action was selected from AI memory/waypoint evaluation.";
+			}
+			_save->appendToAutoBattleLog(log.str());
+		}
 		action.updateTU();
 		if (action.type == BA_MINDCONTROL || action.type == BA_PANIC || action.type == BA_USE)
 		{
@@ -458,6 +591,17 @@ void BattlescapeGame::handleAI(BattleUnit *unit)
 	if (action.type == BA_NONE)
 	{
 		_parentState->debug("Idle");
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "AI decision: " << autoBattleUnitLabel(unit)
+				<< " chose idle. Why: mode=" << autoBattleAIModeName(ai->getAIMode())
+				<< ", known=" << ai->getKnownEnemies()
+				<< ", visible=" << ai->getVisibleEnemies()
+				<< ", spotting=" << ai->getSpottingEnemies()
+				<< "; no valid or useful action remained.";
+			_save->appendToAutoBattleLog(log.str());
+		}
 		_AIActionCounter = 0;
 		if (_save->selectNextPlayerUnit(true, _AISecondMove) == 0)
 		{
@@ -2602,6 +2746,14 @@ bool BattlescapeGame::findItem(BattleAction *action, bool pickUpWeaponsMoreActiv
 				// try to pick it up
 				if (takeItemFromGround(targetItem, action) == 0)
 				{
+					if (Options::autoBattleLog)
+					{
+						std::ostringstream log;
+						log << "Item pickup: " << autoBattleUnitLabel(action->actor)
+							<< " picked up " << targetItem->getRules()->getType()
+							<< ". Why: weapon/ammo attraction was useful and item was on the same tile.";
+						_save->appendToAutoBattleLog(log.str());
+					}
 					// if it isn't loaded or it is ammo
 					if (!targetItem->haveAnyAmmo())
 					{
@@ -2622,6 +2774,15 @@ bool BattlescapeGame::findItem(BattleAction *action, bool pickUpWeaponsMoreActiv
 				action->target = targetItem->getTile()->getPosition();
 				action->type = BA_WALK;
 				walkToItem = true;
+				if (Options::autoBattleLog)
+				{
+					std::ostringstream log;
+					log << "Item target: " << autoBattleUnitLabel(action->actor)
+						<< " wants " << targetItem->getRules()->getType()
+						<< " at " << action->target
+						<< ". Why: current weapon/ammo situation made this item attractive.";
+					_save->appendToAutoBattleLog(log.str());
+				}
 				if (pickUpWeaponsMoreActively)
 				{
 					// don't end the turn after walking 1-2 tiles... pick up a weapon and shoot!
