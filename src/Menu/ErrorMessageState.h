@@ -43,6 +43,8 @@ public:
 	ErrorMessageState(const std::string &msg, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor, Uint8 color2 = 0);
 	/// Cleans up the Error state.
 	~ErrorMessageState();
+	/// Handles automatic closing in unattended autobattle runs.
+	void think();
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
 };

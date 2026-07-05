@@ -29,6 +29,7 @@ namespace OpenXcom
 
 class SavedBattleGame;
 class BattleUnit;
+class FactionAI;
 struct BattleAction;
 class BattlescapeState;
 class Node;
@@ -55,6 +56,7 @@ private:
 	UnitFaction _targetFaction;
 
 	BattleAction _escapeAction, _ambushAction, _attackAction, _patrolAction, _psiAction;
+	const FactionAI *_factionAI;
 
 	bool selectPointNearTargetLeeroy(BattleUnit *target, bool canRun);
 	int selectNearestTargetLeeroy(bool canRun);
@@ -81,6 +83,8 @@ public:
 	void setWasHitBy(BattleUnit *attacker);
 	/// Sets the "unit picked up a weapon" flag.
 	void setWeaponPickedUp();
+	/// Sets the faction-level planner for this unit AI.
+	void setFactionAI(const FactionAI *factionAI) { _factionAI = factionAI; }
 	/// Gets whether the unit was hit.
 	bool getWasHitBy(int attacker) const;
 	/// Gets current AI mode.

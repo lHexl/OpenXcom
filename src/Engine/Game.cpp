@@ -388,6 +388,7 @@ void Game::run()
  */
 void Game::quit()
 {
+	Log(LOG_INFO) << "Game::quit requested";
 	// Hard-learned lesson: there's a billion+ situations, where this causes a corrupted save and subsequent crashes. It's not worth it!
 #if 0
 	// Always save ironman

@@ -24,6 +24,7 @@
 #include "../Interface/Window.h"
 #include "../Interface/Text.h"
 #include "../Engine/Options.h"
+#include "../Engine/Logger.h"
 
 namespace OpenXcom
 {
@@ -60,6 +61,8 @@ ErrorMessageState::~ErrorMessageState()
  */
 void ErrorMessageState::create(const std::string &str, SDL_Color *palette, Uint8 color, const std::string &bg, int bgColor, Uint8 color2)
 {
+	Log(LOG_ERROR) << "Error message state: " << str;
+
 	_screen = false;
 
 	// Create objects
@@ -104,6 +107,15 @@ void ErrorMessageState::create(const std::string &str, SDL_Color *palette, Uint8
 		_window->setHighContrast(true);
 		_btnOk->setHighContrast(true);
 		_txtMessage->setHighContrast(true);
+	}
+}
+
+void ErrorMessageState::think()
+{
+	State::think();
+	if (Options::autoBattle)
+	{
+		_game->popState();
 	}
 }
 

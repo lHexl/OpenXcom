@@ -18,7 +18,9 @@
  */
 #include <climits>
 #include <algorithm>
+#include <sstream>
 #include "PlayerFactionAI.h"
+#include "FactionAI.h"
 #include "../Savegame/BattleItem.h"
 #include "../Savegame/Node.h"
 #include "../Savegame/SavedBattleGame.h"
@@ -48,7 +50,8 @@ namespace OpenXcom
 PlayerFactionAI::PlayerFactionAI(SavedBattleGame *save, BattleUnit *unit, Node *node) :
 	AIModule(save, unit, node), _save(save), _unit(unit), _aggroTarget(0), _knownEnemies(0), _visibleEnemies(0), _spottingEnemies(0),
 	_escapeTUs(0), _ambushTUs(0), _weaponPickedUp(false), _rifle(false), _melee(false), _blaster(false), _grenade(false),
-	_didPsi(false), _AIMode(AI_PATROL), _closestDist(100), _fromNode(node), _toNode(0), _foundBaseModuleToDestroy(false)
+	_didPsi(false), _AIMode(AI_PATROL), _closestDist(100), _fromNode(node), _toNode(0), _foundBaseModuleToDestroy(false),
+	_factionAI(0)
 {
 	_traceAI = Options::traceAI;
 
@@ -526,6 +529,51 @@ void PlayerFactionAI::think(BattleAction *action)
 	setupAttack();
 	setupPatrol();
 
+	if (_unit->getFaction() == FACTION_PLAYER && _factionAI && _knownEnemies && !_visibleEnemies)
+	{
+		Position contactPos;
+		if (_factionAI->getBestEnemyContactPosition(&contactPos))
+		{
+			Position bestPos = _unit->getPosition();
+			int bestDist = Position::distance2d(bestPos, contactPos);
+			for (auto tileIndex : _reachable)
+			{
+				Tile *tile = _save->getTile(tileIndex);
+				if (!tile || tile->getDangerous() || (tile->getUnit() && tile->getUnit() != _unit))
+				{
+					continue;
+				}
+				Position pos = tile->getPosition();
+				int dist = Position::distance2d(pos, contactPos);
+				if (dist < bestDist)
+				{
+					bestDist = dist;
+					bestPos = pos;
+				}
+			}
+			if (bestPos != _unit->getPosition())
+			{
+				_patrolAction.actor = _unit;
+				_patrolAction.weapon = action->weapon;
+				_patrolAction.target = bestPos;
+				_patrolAction.type = BA_WALK;
+				if (_attackAction.type == BA_RETHINK)
+				{
+					_attackAction = _patrolAction;
+				}
+				if (Options::autoBattleLog)
+				{
+					std::ostringstream log;
+					log << "Player faction support move: unit=" << _unit->getId()
+						<< ", contact=" << contactPos
+						<< ", target=" << bestPos
+						<< ", distance=" << bestDist;
+					_save->appendToAutoBattleLog(log.str());
+				}
+			}
+		}
+	}
+
 	if (_psiAction.type != BA_NONE && !_didPsi && _save->getTurn() >= _psiAction.weapon->getRules()->getAIUseDelay(_save->getMod()))
 	{
 		_didPsi = true;
@@ -599,6 +647,18 @@ void PlayerFactionAI::think(BattleAction *action)
 			}
 			Log(LOG_INFO) << "Re-Evaluated, now using " << AIMode << " behaviour";
 		}
+	}
+
+	if (_unit->getFaction() == FACTION_PLAYER && _visibleEnemies && _attackAction.type != BA_RETHINK && _attackAction.type != BA_WALK)
+	{
+		if (_AIMode == AI_ESCAPE && Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction override: unit=" << _unit->getId()
+				<< " switches Escape to Combat because a visible enemy can be attacked.";
+			_save->appendToAutoBattleLog(log.str());
+		}
+		_AIMode = AI_COMBAT;
 	}
 
 	_reserve = BA_NONE;
@@ -1317,6 +1377,11 @@ int PlayerFactionAI::countKnownTargets() const
 {
 	int knownEnemies = 0;
 
+	if (_unit->getFaction() == FACTION_PLAYER && _factionAI)
+	{
+		return _factionAI->getEnemyContactCount();
+	}
+
 	if (_unit->getFaction() == FACTION_HOSTILE)
 	{
 		for (auto* bu : *_save->getUnits())
@@ -1379,6 +1444,7 @@ int PlayerFactionAI::selectNearestTarget()
 	_closestDist= 100;
 	_aggroTarget = 0;
 	Position target;
+	BattleUnit *assignedTarget = _factionAI ? _factionAI->getAssignedTarget(_unit) : 0;
 	for (auto* bu : *_save->getUnits())
 	{
 		if (validTarget(bu, true, true) &&
@@ -1386,7 +1452,8 @@ int PlayerFactionAI::selectNearestTarget()
 		{
 			tally++;
 			int dist = Position::distance2d(_unit->getPosition(), bu->getPosition());
-			if (dist < _closestDist)
+			const bool assigned = assignedTarget == bu;
+			if (assigned || dist < _closestDist)
 			{
 				bool valid = false;
 				if (_rifle || !_melee)
@@ -1410,6 +1477,18 @@ int PlayerFactionAI::selectNearestTarget()
 				{
 					_closestDist = dist;
 					_aggroTarget = bu;
+					if (assigned)
+					{
+						if (Options::autoBattleLog)
+						{
+							std::ostringstream log;
+							log << "Player faction target accepted: unit=" << _unit->getId()
+								<< ", target=" << bu->getId()
+								<< ", reason=" << _factionAI->getAssignmentReason(_unit);
+							_save->appendToAutoBattleLog(log.str());
+						}
+						break;
+					}
 				}
 			}
 		}

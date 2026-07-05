@@ -166,7 +166,9 @@ void LoadGameState::think()
 		SavedGame *s = new SavedGame();
 		try
 		{
+			Log(LOG_INFO) << "LoadGameState: loading save '" << _filename << "'";
 			s->load(_filename, _game->getMod(), _game->getLanguage());
+			Log(LOG_INFO) << "LoadGameState: save loaded";
 			_game->setSavedGame(s);
 			if (_game->getSavedGame()->getEnding() != END_NONE)
 			{
@@ -188,6 +190,7 @@ void LoadGameState::think()
 				_game->setState(new GeoscapeState);
 				if (_game->getSavedGame()->getSavedBattle() != 0)
 				{
+					Log(LOG_INFO) << "LoadGameState: entering battlescape from loaded save";
 					_game->getSavedGame()->getSavedBattle()->loadMapResources(_game->getMod());
 					Options::baseXResolution = Options::baseXBattlescape;
 					Options::baseYResolution = Options::baseYBattlescape;

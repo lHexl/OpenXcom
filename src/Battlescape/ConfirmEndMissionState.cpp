@@ -95,6 +95,15 @@ ConfirmEndMissionState::~ConfirmEndMissionState()
 
 }
 
+void ConfirmEndMissionState::think()
+{
+	State::think();
+	if (Options::autoBattle)
+	{
+		btnOkClick(0);
+	}
+}
+
 /**
  * Confirms mission end.
  * @param action Pointer to an action.

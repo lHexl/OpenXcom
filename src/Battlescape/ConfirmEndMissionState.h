@@ -46,6 +46,8 @@ public:
 	ConfirmEndMissionState(SavedBattleGame *battleGame, int wounded, BattlescapeGame *parent);
 	/// Cleans up the ConfirmEndMission state.
 	~ConfirmEndMissionState();
+	/// Handles automatic confirmation in unattended autobattle runs.
+	void think();
 	/// Handler for clicking the OK button.
 	void btnOkClick(Action *action);
 	/// Handler for clicking the Cancel button.
