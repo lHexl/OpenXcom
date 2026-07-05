@@ -17,7 +17,6 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <algorithm>
-#include <chrono>
 #include <sstream>
 #include <iomanip>
 #include "../fmath.h"
@@ -114,19 +113,7 @@ BattlescapeState::BattlescapeState() :
 	}
 	if (Options::autoBattleLog)
 	{
-		std::ostringstream log;
-		log << "OpenXcom auto battle log\n";
-		log << "Started: " << CrossPlatform::now() << "\n\n";
-		CrossPlatform::writeFile(Options::getUserFolder() + "auto-battle-log.txt", log.str());
-		const Uint32 ticks = SDL_GetTicks();
-		const long long steadyNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
-			std::chrono::steady_clock::now().time_since_epoch()).count();
-		std::ostringstream json;
-		json << "{\"event\":\"start\",\"time\":\"" << CrossPlatform::now() << "\""
-			<< ",\"ticks_ms\":" << ticks
-			<< ",\"steady_ns\":" << steadyNs
-			<< ",\"dt_ms\":0}\n";
-		CrossPlatform::writeFile(Options::getUserFolder() + "auto-battle-log.jsonl", json.str());
+		_save->startAutoBattleLog();
 	}
 
 	std::fill_n(_visibleUnit, 10, (BattleUnit*)(0));

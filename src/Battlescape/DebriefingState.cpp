@@ -424,7 +424,7 @@ void DebriefingState::writeAutoBattleLog(int total, const std::string &rating, S
 		return;
 	}
 
-	std::ofstream file(Options::getUserFolder() + "auto-battle-log.txt", std::ios::app);
+	std::ofstream file(battle ? battle->getAutoBattleLogTextPath() : Options::getUserFolder() + "auto-battle-log.txt", std::ios::app);
 	if (!file)
 	{
 		return;
@@ -483,7 +483,7 @@ void DebriefingState::writeAutoBattleLog(int total, const std::string &rating, S
 		file << "Final turn: " << battle->getTurn() << "\n";
 	}
 
-	std::ofstream jsonFile(Options::getUserFolder() + "auto-battle-log.jsonl", std::ios::app);
+	std::ofstream jsonFile(battle ? battle->getAutoBattleLogJsonPath() : Options::getUserFolder() + "auto-battle-log.jsonl", std::ios::app);
 	if (jsonFile)
 	{
 		const Uint32 ticks = SDL_GetTicks();

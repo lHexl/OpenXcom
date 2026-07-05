@@ -44,6 +44,7 @@
 #include "../Engine/Sound.h"
 #include "../Mod/RuleInventory.h"
 #include "../Battlescape/AIModule.h"
+#include "../Engine/CrossPlatform.h"
 #include "../Engine/RNG.h"
 #include "../Engine/Options.h"
 #include "../Engine/Logger.h"
@@ -64,6 +65,35 @@ namespace OpenXcom
 
 namespace
 {
+
+std::string autoBattleLogTextPath;
+std::string autoBattleLogJsonPath;
+
+void setAutoBattleLogPaths()
+{
+	const std::string timestamp = CrossPlatform::sanitizeFilename(CrossPlatform::now());
+	const std::string base = Options::getUserFolder() + "auto-battle-log-" + timestamp;
+	autoBattleLogTextPath = base + ".txt";
+	autoBattleLogJsonPath = base + ".jsonl";
+}
+
+const std::string &getAutoBattleLogTextPath()
+{
+	if (autoBattleLogTextPath.empty())
+	{
+		setAutoBattleLogPaths();
+	}
+	return autoBattleLogTextPath;
+}
+
+const std::string &getAutoBattleLogJsonPath()
+{
+	if (autoBattleLogJsonPath.empty())
+	{
+		setAutoBattleLogPaths();
+	}
+	return autoBattleLogJsonPath;
+}
 
 const char *autoBattleLogFaction(UnitFaction faction)
 {
@@ -142,7 +172,7 @@ void appendAutoBattleJsonLine(const std::string &json)
 		return;
 	}
 
-	std::ofstream file(Options::getUserFolder() + "auto-battle-log.jsonl", std::ios::app);
+	std::ofstream file(getAutoBattleLogJsonPath(), std::ios::app);
 	if (!file)
 	{
 		return;
@@ -177,7 +207,7 @@ void appendAutoBattleLog(HitLogEntryType type, UnitFaction faction, const std::s
 		return;
 	}
 
-	std::ofstream file(Options::getUserFolder() + "auto-battle-log.txt", std::ios::app);
+	std::ofstream file(getAutoBattleLogTextPath(), std::ios::app);
 	if (!file)
 	{
 		return;
@@ -3554,6 +3584,31 @@ void SavedBattleGame::appendToHitLog(HitLogEntryType type, UnitFaction faction, 
 	appendAutoBattleLog(type, faction, text);
 }
 
+void SavedBattleGame::startAutoBattleLog() const
+{
+	if (!Options::autoBattleLog)
+	{
+		return;
+	}
+
+	setAutoBattleLogPaths();
+
+	std::ostringstream log;
+	log << "OpenXcom auto battle log\n";
+	log << "Started: " << CrossPlatform::now() << "\n\n";
+	CrossPlatform::writeFile(getAutoBattleLogTextPath(), log.str());
+
+	const Uint32 ticks = SDL_GetTicks();
+	const long long steadyNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+	std::ostringstream json;
+	json << "{\"event\":\"start\",\"time\":\"" << CrossPlatform::now() << "\""
+		<< ",\"ticks_ms\":" << ticks
+		<< ",\"steady_ns\":" << steadyNs
+		<< ",\"dt_ms\":0}\n";
+	CrossPlatform::writeFile(getAutoBattleLogJsonPath(), json.str());
+}
+
 void SavedBattleGame::appendToAutoBattleLog(const std::string &text) const
 {
 	if (!Options::autoBattleLog)
@@ -3561,7 +3616,7 @@ void SavedBattleGame::appendToAutoBattleLog(const std::string &text) const
 		return;
 	}
 
-	std::ofstream file(Options::getUserFolder() + "auto-battle-log.txt", std::ios::app);
+	std::ofstream file(getAutoBattleLogTextPath(), std::ios::app);
 	if (!file)
 	{
 		return;
@@ -3572,6 +3627,16 @@ void SavedBattleGame::appendToAutoBattleLog(const std::string &text) const
 	std::ostringstream json;
 	json << "{\"event\":\"detail\",\"message\":\"" << autoBattleJsonEscape(text) << "\"}";
 	appendAutoBattleJsonLine(json.str());
+}
+
+std::string SavedBattleGame::getAutoBattleLogTextPath() const
+{
+	return OpenXcom::getAutoBattleLogTextPath();
+}
+
+std::string SavedBattleGame::getAutoBattleLogJsonPath() const
+{
+	return OpenXcom::getAutoBattleLogJsonPath();
 }
 
 /**

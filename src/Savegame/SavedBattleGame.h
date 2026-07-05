@@ -664,8 +664,14 @@ public:
 	/// Appends a given entry to the hit log. Works only during the player's turn.
 	void appendToHitLog(HitLogEntryType type, UnitFaction faction);
 	void appendToHitLog(HitLogEntryType type, UnitFaction faction, const std::string &text);
+	/// Starts a new timestamped auto battle log.
+	void startAutoBattleLog() const;
 	/// Appends a detailed auto battle log line.
 	void appendToAutoBattleLog(const std::string &text) const;
+	/// Gets the current auto battle text log path.
+	std::string getAutoBattleLogTextPath() const;
+	/// Gets the current auto battle JSONL log path.
+	std::string getAutoBattleLogJsonPath() const;
 	/// Gets the hit log.
 	const HitLog *getHitLog() const;
 	/// Reset all the unit hit state flags.

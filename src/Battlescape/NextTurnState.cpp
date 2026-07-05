@@ -307,7 +307,7 @@ NextTurnState::NextTurnState(SavedBattleGame *battleGame, BattlescapeState *stat
 		}
 	}
 
-	if (Options::skipNextTurnScreen && message.empty() && messageReinforcements.empty())
+	if (Options::skipNextTurnScreen && message.empty() && messageReinforcements.empty() && !Options::autoBattle)
 	{
 		_timer = new Timer(NEXT_TURN_DELAY);
 		_timer->onTimer((StateHandler)&NextTurnState::close);
@@ -326,6 +326,12 @@ NextTurnState::~NextTurnState()
 void NextTurnState::init()
 {
 	State::init();
+
+	if (Options::autoBattle && !_battleGame->isPreview())
+	{
+		close();
+		return;
+	}
 
 	if (_battleGame->isPreview())
 	{
