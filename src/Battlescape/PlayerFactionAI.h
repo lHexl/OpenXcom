@@ -131,6 +131,7 @@ public:
 	/// Decides if we should throw a grenade/launch a missile to this position.
 	int explosiveEfficacy(Position targetPos, BattleUnit *attackingUnit, int radius, int diff, bool grenade = false) const;
 	bool explosiveProjectileRiskyForAllies(BattleAction *action, int radius, const Position *originPosition = 0, bool logRejection = true) const;
+	bool directProjectileRiskyForAllies(BattleAction *action, BattleUnit *target, bool logRejection = true) const;
 	bool getNodeOfBestEfficacy(BattleAction *action, int radius);
 	/// Attempts to take a melee attack/charge an enemy we can see.
 	void meleeAction();

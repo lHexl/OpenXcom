@@ -590,17 +590,33 @@ void PlayerFactionAI::think(BattleAction *action)
 					const int dist = Position::distance2d(pos, other->getPosition());
 					if (dist <= 1)
 					{
-						penalty += 0;
+						penalty += 90;
 					}
 					else if (dist <= 2)
 					{
-						penalty += 0;
+						penalty += 35;
 					}
 				}
 				return penalty;
 			};
+			auto tooCloseToAlly = [&](const Position &pos) -> bool
+			{
+				for (auto *other : *_save->getUnits())
+				{
+					if (!other || other == _unit || other->isOut() || other->getFaction() != _unit->getFaction())
+					{
+						continue;
+					}
+					if (other->getPosition().z == pos.z && Position::distance2d(pos, other->getPosition()) <= 1)
+					{
+						return true;
+					}
+				}
+				return false;
+			};
 			const bool hasRangedWeapon = _rifle || _blaster || _grenade || !_melee;
 			const int desiredOpenDist = hasRangedWeapon ? 10 : 5;
+			const int maxSupportMoveDistance = openAreaFight ? 8 : 6;
 			int bestSupportScore = openAreaFight
 				? abs(bestDist - desiredOpenDist) * 6 + bestSpotters * 40 - supportCoverScore(bestPos) * 5 + allyCrowdingPenalty(bestPos)
 				: bestDist * 4 + bestSpotters * 20 - supportCoverScore(bestPos) * 3 + allyCrowdingPenalty(bestPos);
@@ -612,6 +628,15 @@ void PlayerFactionAI::think(BattleAction *action)
 					continue;
 				}
 				Position pos = tile->getPosition();
+				const int moveDist = Position::distance2d(pos, _unit->getPosition());
+				if (pos.z != _unit->getPosition().z || moveDist > maxSupportMoveDistance)
+				{
+					continue;
+				}
+				if (openAreaFight && tooCloseToAlly(pos))
+				{
+					continue;
+				}
 				if (riskyRoom && contactRoom && _factionAI->getRoomIdAt(pos) == contactRoom->id)
 				{
 					continue;
@@ -631,8 +656,8 @@ void PlayerFactionAI::think(BattleAction *action)
 					continue;
 				}
 				int supportScore = openAreaFight
-					? abs(dist - desiredOpenDist) * 6 + spotters * 40 - supportCoverScore(pos) * 5 + allyCrowdingPenalty(pos)
-					: dist * 4 + spotters * 20 - supportCoverScore(pos) * 3 + allyCrowdingPenalty(pos);
+					? abs(dist - desiredOpenDist) * 6 + spotters * 40 + moveDist * 3 - supportCoverScore(pos) * 5 + allyCrowdingPenalty(pos)
+					: dist * 4 + spotters * 20 + moveDist * 2 - supportCoverScore(pos) * 3 + allyCrowdingPenalty(pos);
 				if (supportScore < bestSupportScore)
 				{
 					bestSpotters = spotters;
@@ -669,6 +694,8 @@ void PlayerFactionAI::think(BattleAction *action)
 						<< ", openAreaFight=" << openAreaFight
 						<< ", target=" << bestPos
 						<< ", distance=" << bestDist
+						<< ", moveDistance=" << Position::distance2d(bestPos, _unit->getPosition())
+						<< ", maxMoveDistance=" << maxSupportMoveDistance
 						<< ", spotters=" << bestSpotters;
 					_save->appendToAutoBattleLog(log.str());
 				}
@@ -862,7 +889,48 @@ factionRoomTacticsDone:
 			&& _attackAction.type == BA_WALK
 			&& action->weapon
 			&& BattleActionCost(BA_SNAPSHOT, _unit, action->weapon).haveTU();
-		if (!firePointMove)
+		auto defensiveCoverScore = [&](const Position &pos) -> int
+		{
+			Tile *tile = _save->getTile(pos);
+			if (!tile)
+			{
+				return 0;
+			}
+			int cover = 0;
+			if (tile->getMapData(O_OBJECT))
+			{
+				cover += 8;
+			}
+			if (tile->getMapData(O_NORTHWALL))
+			{
+				cover += 6;
+			}
+			if (tile->getMapData(O_WESTWALL))
+			{
+				cover += 6;
+			}
+			return cover;
+		};
+		const int targetSpotters = getSpottingUnits(action->target);
+		const int currentCover = defensiveCoverScore(_unit->getPosition());
+		const int targetCover = defensiveCoverScore(action->target);
+		const int defensiveMoveDistance = Position::distance2d(action->target, _unit->getPosition());
+		int adjacentAllies = 0;
+		for (auto *other : *_save->getUnits())
+		{
+			if (!other || other == _unit || other->isOut() || other->getFaction() != _unit->getFaction())
+			{
+				continue;
+			}
+			if (other->getPosition().z == action->target.z && Position::distance2d(action->target, other->getPosition()) <= 1)
+			{
+				++adjacentAllies;
+			}
+		}
+		const bool saferSpottingMove = targetSpotters < _spottingEnemies && (targetCover >= currentCover || targetSpotters + 1 < _spottingEnemies || defensiveMoveDistance <= 2);
+		const bool betterCoverMove = targetSpotters <= _spottingEnemies && targetCover >= currentCover + 6;
+		const bool defensiveMove = defensiveMoveDistance <= 4 && adjacentAllies == 0 && (saferSpottingMove || betterCoverMove);
+		if (!firePointMove && !defensiveMove)
 		{
 			if (Options::autoBattleLog)
 			{
@@ -871,6 +939,11 @@ factionRoomTacticsDone:
 					<< " holds position instead of walking under contact"
 					<< ", visible=" << _visibleEnemies
 					<< ", spotting=" << _spottingEnemies
+					<< ", targetSpotters=" << targetSpotters
+					<< ", currentCover=" << currentCover
+					<< ", targetCover=" << targetCover
+					<< ", moveDistance=" << defensiveMoveDistance
+					<< ", adjacentAllies=" << adjacentAllies
 					<< ", mode=" << _AIMode;
 				_save->appendToAutoBattleLog(log.str());
 			}
@@ -878,6 +951,21 @@ factionRoomTacticsDone:
 			action->target = _unit->getPosition();
 			action->finalAction = true;
 			action->kneel = _unit->getArmor()->allowsKneeling(false);
+		}
+		else if (defensiveMove && Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction defensive move allowed: unit=" << _unit->getId()
+				<< ", target=" << action->target
+				<< ", visible=" << _visibleEnemies
+				<< ", spotting=" << _spottingEnemies
+				<< ", targetSpotters=" << targetSpotters
+				<< ", currentCover=" << currentCover
+				<< ", targetCover=" << targetCover
+				<< ", moveDistance=" << defensiveMoveDistance
+				<< ", adjacentAllies=" << adjacentAllies
+				<< ", mode=" << _AIMode;
+			_save->appendToAutoBattleLog(log.str());
 		}
 	}
 
@@ -1106,11 +1194,11 @@ void PlayerFactionAI::setupPatrol()
 					const int dist = Position::distance2d(pos, other->getPosition());
 					if (dist <= 1)
 					{
-						penalty += 0;
+						penalty += 45;
 					}
 					else if (dist <= 2)
 					{
-						penalty += 0;
+						penalty += 18;
 					}
 				}
 				return penalty;
@@ -2208,6 +2296,11 @@ int PlayerFactionAI::scoreFiringMode(BattleAction *action, BattleUnit *target, b
 		accuracy = 0;
 	}
 
+	if (accuracy > 0 && directProjectileRiskyForAllies(action, target))
+	{
+		return 0;
+	}
+
 	int numberOfShots = 1;
 	if (action->type == BA_AIMEDSHOT)
 	{
@@ -2944,6 +3037,86 @@ bool PlayerFactionAI::explosiveProjectileRiskyForAllies(BattleAction *action, in
 	return riskyBySpread;
 }
 
+bool PlayerFactionAI::directProjectileRiskyForAllies(BattleAction *action, BattleUnit *target, bool logRejection) const
+{
+	if (!action || !action->actor || !action->weapon || !target || action->actor->getFaction() != FACTION_PLAYER)
+	{
+		return false;
+	}
+
+	if (action->weapon->getArcingShot(action->type) || action->type == BA_THROW)
+	{
+		return false;
+	}
+
+	Position originVoxel = _save->getTileEngine()->getOriginVoxel(*action, _save->getTile(action->actor->getPosition()));
+	Position targetVoxel;
+	if (!_save->getTileEngine()->canTargetUnit(&originVoxel, target->getTile(), &targetVoxel, action->actor, false, target))
+	{
+		return false;
+	}
+
+	std::vector<Position> trajectory;
+	int impact = _save->getTileEngine()->calculateLineVoxel(originVoxel, targetVoxel, true, &trajectory, action->actor);
+	for (const auto &voxel : trajectory)
+	{
+		Tile *tile = _save->getTile(voxel.toTile());
+		BattleUnit *unit = tile ? tile->getOverlappingUnit(_save) : 0;
+		if (!unit || unit == action->actor || unit == target)
+		{
+			Position tilePos = voxel.toTile();
+			for (auto *ally : *_save->getUnits())
+			{
+				if (!ally || ally == action->actor || ally == target || ally->isOut() || ally->getFaction() != action->actor->getFaction())
+				{
+					continue;
+				}
+				if (ally->getPosition().z == tilePos.z
+					&& Position::distance2d(ally->getPosition(), action->actor->getPosition()) > 1
+					&& Position::distance2d(ally->getPosition(), tilePos) <= 1)
+				{
+					if (logRejection && Options::autoBattleLog)
+					{
+						std::ostringstream log;
+						log << "Player faction direct shot rejected: unit=" << action->actor->getId()
+							<< ", targetUnit=" << target->getId()
+							<< ", target=" << action->target
+							<< ", fireMode=" << (int)action->type
+							<< ", ally=" << ally->getId()
+							<< ", allyPos=" << ally->getPosition()
+							<< ", voxel=" << voxel
+							<< ", impact=" << impact
+							<< ", reason=ally_near_trajectory";
+						_save->appendToAutoBattleLog(log.str());
+					}
+					return true;
+				}
+			}
+			continue;
+		}
+		if (unit->getFaction() == action->actor->getFaction())
+		{
+			if (logRejection && Options::autoBattleLog)
+			{
+				std::ostringstream log;
+				log << "Player faction direct shot rejected: unit=" << action->actor->getId()
+					<< ", targetUnit=" << target->getId()
+					<< ", target=" << action->target
+					<< ", fireMode=" << (int)action->type
+					<< ", ally=" << unit->getId()
+					<< ", allyPos=" << unit->getPosition()
+					<< ", voxel=" << voxel
+					<< ", impact=" << impact
+					<< ", reason=ally_on_trajectory";
+				_save->appendToAutoBattleLog(log.str());
+			}
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /**
  * Attempts to take a melee attack/charge an enemy we can see.
  * Melee targetting: we can see an enemy, we can move to it so we're charging blindly toward an enemy.
@@ -3143,6 +3316,12 @@ bool PlayerFactionAI::sniperAction()
 	if (selectSpottedUnitForSniper())
 	{
 		_visibleEnemies = std::max(_visibleEnemies, 1); // Make sure we count at least our target as visible, otherwise we might not shoot!
+		if (directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+		{
+			_attackAction.type = BA_RETHINK;
+			if (_traceAI) { Log(LOG_INFO) << "Sniper action rejected because friendly unit is too close to the firing line."; }
+			return false;
+		}
 
 		if (_traceAI) { Log(LOG_INFO) << "Target for sniper found at (" << _attackAction.target.x << "," << _attackAction.target.y << "," << _attackAction.target.z << ")."; }
 		return true;
@@ -3185,6 +3364,10 @@ void PlayerFactionAI::projectileAction()
 				{
 					cost.clearTU();
 				}
+				else if (radius == 0 && directProjectileRiskyForAllies(&riskAction, _aggroTarget))
+				{
+					cost.clearTU();
+				}
 			}
 		}
 	};
@@ -3209,6 +3392,10 @@ void PlayerFactionAI::projectileAction()
 		// Note: this will also check for the weapon's max range
 		BattleActionCost costThrow; // Not actually checked here, just passed to extendedFireModeChoice as a necessary argument
 		extendedFireModeChoice(costAuto, costSnap, costAimed, costThrow, false);
+		if (_attackAction.type != BA_RETHINK && directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+		{
+			_attackAction.type = BA_RETHINK;
+		}
 		return;
 	}
 
@@ -3230,6 +3417,10 @@ void PlayerFactionAI::projectileAction()
 		if (costAuto.haveTU())
 		{
 			_attackAction.type = BA_AUTOSHOT;
+			if (directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+			{
+				_attackAction.type = BA_RETHINK;
+			}
 			return;
 		}
 		if (!costSnap.haveTU())
@@ -3237,10 +3428,18 @@ void PlayerFactionAI::projectileAction()
 			if (costAimed.haveTU())
 			{
 				_attackAction.type = BA_AIMEDSHOT;
+				if (directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+				{
+					_attackAction.type = BA_RETHINK;
+				}
 			}
 			return;
 		}
 		_attackAction.type = BA_SNAPSHOT;
+		if (directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+		{
+			_attackAction.type = BA_RETHINK;
+		}
 		return;
 	}
 
@@ -3250,11 +3449,19 @@ void PlayerFactionAI::projectileAction()
 		if (costAimed.haveTU())
 		{
 			_attackAction.type = BA_AIMEDSHOT;
+			if (directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+			{
+				_attackAction.type = BA_RETHINK;
+			}
 			return;
 		}
 		if (distance < 20 && costSnap.haveTU())
 		{
 			_attackAction.type = BA_SNAPSHOT;
+			if (directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+			{
+				_attackAction.type = BA_RETHINK;
+			}
 			return;
 		}
 	}
@@ -3262,16 +3469,28 @@ void PlayerFactionAI::projectileAction()
 	if (costSnap.haveTU())
 	{
 		_attackAction.type = BA_SNAPSHOT;
+		if (directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+		{
+			_attackAction.type = BA_RETHINK;
+		}
 		return;
 	}
 	if (costAimed.haveTU())
 	{
 		_attackAction.type = BA_AIMEDSHOT;
+		if (directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+		{
+			_attackAction.type = BA_RETHINK;
+		}
 		return;
 	}
 	if (costAuto.haveTU())
 	{
 		_attackAction.type = BA_AUTOSHOT;
+		if (directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+		{
+			_attackAction.type = BA_RETHINK;
+		}
 	}
 }
 
@@ -3344,6 +3563,10 @@ void PlayerFactionAI::extendedFireModeChoice(BattleActionCost& costAuto, BattleA
 	}
 
 	_attackAction.type = chosenAction;
+	if (_attackAction.type != BA_RETHINK && directProjectileRiskyForAllies(&_attackAction, _aggroTarget))
+	{
+		_attackAction.type = BA_RETHINK;
+	}
 }
 
 /**
