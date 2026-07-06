@@ -1182,7 +1182,7 @@ void PlayerFactionAI::think(BattleAction *action)
 		setupFallbackCoverMove();
 	}
 
-	if (_unit->getFaction() == FACTION_PLAYER && _factionAI && (_knownEnemies || _factionAI->getEnemyContactCount() > 0))
+	if (_unit->getFaction() == FACTION_PLAYER && _factionAI && _attackAction.type == BA_RETHINK && (_knownEnemies || _factionAI->getEnemyContactCount() > 0))
 	{
 		Position contactPos;
 		const BattleRoomInfo *contactRoom = 0;
@@ -1417,16 +1417,16 @@ void PlayerFactionAI::think(BattleAction *action)
 					bestPos = pos;
 				}
 			}
-			if (bestPos != _unit->getPosition())
+			const int requiredSupportImprovement = huntingHiddenContact ? 12 : (visibleFactionContact ? 20 : 16);
+			if (bestPos != _unit->getPosition() && bestSupportScore + requiredSupportImprovement < (openAreaFight
+				? abs(currentDist - desiredOpenDist) * 6 + currentSpotters * 40 - supportCoverScore(_unit->getPosition()) * 5 + allyCrowdingPenalty(_unit->getPosition()) + allyFireLanePenalty(_unit->getPosition()) + currentExposure
+				: currentDist * 4 + currentSpotters * 20 - supportCoverScore(_unit->getPosition()) * 3 + allyCrowdingPenalty(_unit->getPosition()) + allyFireLanePenalty(_unit->getPosition()) + currentExposure))
 			{
 				_patrolAction.actor = _unit;
 				_patrolAction.weapon = action->weapon;
 				_patrolAction.target = bestPos;
 				_patrolAction.type = BA_WALK;
-				if (_attackAction.type == BA_RETHINK)
-				{
-					_attackAction = _patrolAction;
-				}
+				_attackAction = _patrolAction;
 				_AIMode = AI_COMBAT;
 				if (Options::autoBattleLog)
 				{
@@ -2304,6 +2304,12 @@ bool PlayerFactionAI::setupFactionStalkAmbush(const Position &contactPos, const 
 	{
 		return false;
 	}
+	BattleItem *reactionWeapon = weapon ? weapon : selectBestCarriedWeapon();
+	const bool canReactionShoot = reactionWeapon
+		&& reactionWeapon->getRules()->getBattleType() == BT_FIREARM
+		&& _save->canUseWeapon(reactionWeapon, _unit, false, BA_SNAPSHOT)
+		&& reactionWeapon->getAmmoForAction(BA_SNAPSHOT);
+	const int snapTU = canReactionShoot ? (int)BattleActionCost(BA_SNAPSHOT, _unit, reactionWeapon).Time : 0;
 	const int currentDist = Position::distance2d(_unit->getPosition(), contactPos);
 	const int roomSize = contactRoom ? contactRoom->tileCount : 1;
 	const bool smallDangerRoom = contactRoom && !contactRoom->isOutside && !contactRoom->isHall;
@@ -2319,6 +2325,8 @@ bool PlayerFactionAI::setupFactionStalkAmbush(const Position &contactPos, const 
 	int bestScore = -100000;
 	Position bestPos = _unit->getPosition();
 	Position bestFace = contactPos;
+	int bestReactionScore = 0;
+	int bestMoveTU = 0;
 
 	auto nearestEntryTo = [&](const Position &pos, Position *entry) -> int
 	{
@@ -2407,6 +2415,18 @@ bool PlayerFactionAI::setupFactionStalkAmbush(const Position &contactPos, const 
 		{
 			continue;
 		}
+		_save->getPathfinding()->calculate(_unit, pos, BAM_NORMAL);
+		if (pos != _unit->getPosition() && _save->getPathfinding()->getStartDirection() == -1)
+		{
+			_save->getPathfinding()->abortPath();
+			continue;
+		}
+		const int moveTU = pos == _unit->getPosition() ? 0 : _save->getPathfinding()->getTotalTUCost();
+		_save->getPathfinding()->abortPath();
+		if (canReactionShoot && moveTU + snapTU > _unit->getTimeUnits())
+		{
+			continue;
+		}
 		int dist = Position::distance2d(pos, contactPos);
 		Position entryPos;
 		const int entryDist = nearestEntryTo(pos, &entryPos);
@@ -2428,10 +2448,30 @@ bool PlayerFactionAI::setupFactionStalkAmbush(const Position &contactPos, const 
 		{
 			continue;
 		}
+		const int remainingTU = std::max(0, _unit->getTimeUnits() - moveTU);
+		const int reactionScore = _unit->getBaseStats()->tu > 0
+			? (int)(_unit->getBaseStats()->reactions * remainingTU / _unit->getBaseStats()->tu)
+			: 0;
+		const int minReactionScore = riskyRoom ? 22 : (enemiesInRoom > 1 ? 32 : 26);
+		if (canReactionShoot && reactionScore < minReactionScore)
+		{
+			continue;
+		}
 		int score = 100;
 		score -= abs((riskyRoom ? entryDist : dist) - desiredDist) * 8;
 		score -= spotters * (35 + roomPressure);
 		score += cover;
+		score += std::min(80, reactionScore * 2);
+		if (canReactionShoot)
+		{
+			score += 35;
+			score -= std::max(0, snapTU - remainingTU / 2);
+		}
+		score -= moveTU / 2;
+		if (pos == _unit->getPosition() && canReactionShoot)
+		{
+			score += 25;
+		}
 		if (riskyRoom)
 		{
 			score += std::max(0, 45 - entryDist * 8);
@@ -2450,6 +2490,8 @@ bool PlayerFactionAI::setupFactionStalkAmbush(const Position &contactPos, const 
 			bestScore = score;
 			bestPos = pos;
 			bestFace = riskyRoom ? (pos == entryPos ? contactPos : entryPos) : contactPos;
+			bestReactionScore = reactionScore;
+			bestMoveTU = moveTU;
 		}
 	}
 
@@ -2476,10 +2518,14 @@ bool PlayerFactionAI::setupFactionStalkAmbush(const Position &contactPos, const 
 			<< ", roomDoors=" << (contactRoom ? contactRoom->doorCount : 0)
 			<< ", roomWindows=" << (contactRoom ? contactRoom->windowCount : 0)
 			<< ", roomEntries=" << (contactRoom ? contactRoom->entryPositions.size() : 0)
-			<< ", roomHall=" << (contactRoom ? contactRoom->isHall : false)
-			<< ", minDoorDist=" << minDoorDist
-			<< ", riskyRoom=" << riskyRoom
-			<< ", facing=" << bestFace;
+		<< ", roomHall=" << (contactRoom ? contactRoom->isHall : false)
+		<< ", minDoorDist=" << minDoorDist
+		<< ", riskyRoom=" << riskyRoom
+		<< ", reactionWeapon=" << (reactionWeapon ? reactionWeapon->getRules()->getType() : "none")
+		<< ", snapTU=" << snapTU
+		<< ", moveTU=" << bestMoveTU
+		<< ", reactionScore=" << bestReactionScore
+		<< ", facing=" << bestFace;
 		_save->appendToAutoBattleLog(log.str());
 	}
 	return true;
