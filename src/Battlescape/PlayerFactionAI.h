@@ -132,6 +132,7 @@ public:
 	int getSpottingUnits(const Position& pos) const;
 	int getEnemyFireExposure(const Position& pos) const;
 	int scoreTargetPriority(BattleUnit *target, bool assigned, bool visible, int distance) const;
+	int estimateDirectShotDamage(BattleAction *action, BattleUnit *target, int accuracy, int shots) const;
 	/// Selects the nearest target we can see, and return the number of viable targets.
 	int selectNearestTarget();
 	/// Selects the closest known xcom unit for ambushing.
@@ -149,7 +150,7 @@ public:
 	/// Selects a suitable position from which to attack.
 	bool findFirePoint();
 	bool setupCleanShotMove(BattleUnit *target);
-	bool setupFallbackCoverMove();
+	bool setupFallbackCoverMove(int minScore = 45, int minExposureGain = 0, int minSpotterGain = 0, int minCoverGain = 0);
 	/// Decides if we should throw a grenade/launch a missile to this position.
 	int scorePlayerGrenadeTarget(BattleItem *grenade, const Position &targetPos, int radius, bool proximity) const;
 	int explosiveEfficacy(Position targetPos, BattleUnit *attackingUnit, int radius, int diff, bool grenade = false) const;
