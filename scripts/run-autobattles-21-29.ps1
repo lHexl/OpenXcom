@@ -5,6 +5,7 @@ $openxcom = Join-Path $root 'build-msvc-ninja\bin\openxcom.exe'
 $openxcomUser = 'C:\Users\user\Documents\OpenXcom'
 $timeoutSeconds = 300
 $saves = 21..29
+$runsPerSave = 4
 
 if (-not (Test-Path -LiteralPath $openxcom)) {
     Write-Error "openxcom.exe not found: $openxcom"
@@ -12,42 +13,49 @@ if (-not (Test-Path -LiteralPath $openxcom)) {
 }
 
 $jobs = foreach ($save in $saves) {
-    Start-Job -Name "autobattle-$save" -ArgumentList $openxcom, $openxcomUser, $save, $timeoutSeconds, ($save - 21) -ScriptBlock {
-        param($openxcom, $openxcomUser, $save, $timeoutSeconds, $staggerSeconds)
+    foreach ($run in 1..$runsPerSave) {
+        $seed = ($save * 1000) + $run
+        $staggerSeconds = (($save - $saves[0]) * $runsPerSave + ($run - 1)) % 10
+        Start-Job -Name "autobattle-$save-$run" -ArgumentList $openxcom, $openxcomUser, $save, $run, $seed, $timeoutSeconds, $staggerSeconds -ScriptBlock {
+            param($openxcom, $openxcomUser, $save, $run, $seed, $timeoutSeconds, $staggerSeconds)
 
-        if ($staggerSeconds -gt 0) {
-            Start-Sleep -Seconds $staggerSeconds
-        }
+            if ($staggerSeconds -gt 0) {
+                Start-Sleep -Seconds $staggerSeconds
+            }
 
-        $args = @(
-            '-user', $openxcomUser,
-            '-config', $openxcomUser,
-            '-master', 'xcom1',
-            '-load', "$save.sav",
-            '-playIntro', 'false',
-            '-autoBattle', 'true',
-            '-autoBattleLog', 'true'
-        )
+            $args = @(
+                '-user', $openxcomUser,
+                '-config', $openxcomUser,
+                '-master', 'xcom1',
+                '-load', "$save.sav",
+                '-playIntro', 'false',
+                '-autoBattle', 'true',
+                '-autoBattleLog', 'true',
+                '-autoBattleSeed', "$seed"
+            )
 
-        $started = Get-Date
-        $process = Start-Process -FilePath $openxcom -ArgumentList $args -PassThru
-        $timedOut = -not $process.WaitForExit($timeoutSeconds * 1000)
-        if ($timedOut) {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-        }
-        $process.Refresh()
+            $started = Get-Date
+            $process = Start-Process -FilePath $openxcom -ArgumentList $args -PassThru
+            $timedOut = -not $process.WaitForExit($timeoutSeconds * 1000)
+            if ($timedOut) {
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            }
+            $process.Refresh()
 
-        [pscustomobject]@{
-            Save = $save
-            Started = $started
-            Finished = Get-Date
-            TimedOut = $timedOut
-            ExitCode = if ($timedOut) { $null } else { $process.ExitCode }
+            [pscustomobject]@{
+                Save = $save
+                Run = $run
+                Seed = $seed
+                Started = $started
+                Finished = Get-Date
+                TimedOut = $timedOut
+                ExitCode = if ($timedOut) { $null } else { $process.ExitCode }
+            }
         }
     }
 }
 
-$jobTimeoutSeconds = $timeoutSeconds + $saves.Count + 30
+$jobTimeoutSeconds = $timeoutSeconds + 60
 $finished = Wait-Job -Job $jobs -Timeout $jobTimeoutSeconds
 $unfinished = $jobs | Where-Object { $_.State -eq 'Running' }
 foreach ($job in $unfinished) {
@@ -59,9 +67,13 @@ foreach ($job in $jobs) {
     if ($job.State -eq 'Completed') {
         $results += Receive-Job -Job $job
     } else {
-        $save = [int]($job.Name -replace '^autobattle-', '')
+        $parts = $job.Name -replace '^autobattle-', ''
+        $save, $run = $parts -split '-'
+        $seed = ([int]$save * 1000) + [int]$run
         $results += [pscustomobject]@{
-            Save = $save
+            Save = [int]$save
+            Run = [int]$run
+            Seed = $seed
             Started = $null
             Finished = Get-Date
             TimedOut = $true
@@ -72,12 +84,12 @@ foreach ($job in $jobs) {
 Remove-Job -Job $jobs -Force -ErrorAction SilentlyContinue
 
 $failed = $false
-foreach ($result in ($results | Sort-Object Save)) {
+foreach ($result in ($results | Sort-Object Save, Run)) {
     if ($result.TimedOut) {
-        Write-Host ("{0}.sav timeout after {1}s" -f $result.Save, $timeoutSeconds)
+        Write-Host ("{0}.sav run={1} seed={2} timeout after {3}s" -f $result.Save, $result.Run, $result.Seed, $timeoutSeconds)
         $failed = $true
     } else {
-        Write-Host ("{0}.sav exit={1}" -f $result.Save, $result.ExitCode)
+        Write-Host ("{0}.sav run={1} seed={2} exit={3}" -f $result.Save, $result.Run, $result.Seed, $result.ExitCode)
         if ($result.ExitCode -ne 0) {
             $failed = $true
         }

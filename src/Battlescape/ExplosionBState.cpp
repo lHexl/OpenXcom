@@ -32,6 +32,7 @@
 #include "../Mod/Armor.h"
 #include "../Engine/RNG.h"
 #include "../Engine/Options.h"
+#include <sstream>
 
 namespace OpenXcom
 {
@@ -207,6 +208,21 @@ void ExplosionBState::init()
 	{
 		if (_power > 0)
 		{
+			if (Options::autoBattleLog)
+			{
+				std::ostringstream log;
+				log << "Explosion: attackerUnit=" << (_attack.attacker ? _attack.attacker->getId() : -1)
+					<< ", action=" << (int)_attack.type
+					<< ", item=" << (_attack.damage_item ? _attack.damage_item->getRules()->getType() : "terrain")
+					<< ", weapon=" << (_attack.weapon_item ? _attack.weapon_item->getRules()->getType() : "none")
+					<< ", centerVoxel=" << _center
+					<< ", centerTile=" << _center.toTile()
+					<< ", power=" << _power
+					<< ", radius=" << _radius
+					<< ", rangeBased=" << range
+					<< ", chain=" << _explosionCounter;
+				_parent->getSave()->appendToAutoBattleLog(log.str());
+			}
 			_parent->getSave()->getTileEngine()->explode(_attack, _center, _power, _damageType, _radius, range);
 
 			int powerForAnimation = _power;

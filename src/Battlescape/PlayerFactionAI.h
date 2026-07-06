@@ -64,6 +64,7 @@ private:
 	bool _stalkAmbushAction;
 	bool _cleanShotMoveAction;
 	bool _fallbackCoverAction;
+	bool _factionSupportMoveAction;
 	std::vector<int> _reachable, _reachableWithAttack, _wasHitBy;
 	BattleActionType _reserve;
 	UnitFaction _targetFaction;

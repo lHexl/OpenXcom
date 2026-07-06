@@ -72,7 +72,11 @@ std::string autoBattleLogJsonPath;
 void setAutoBattleLogPaths()
 {
 	const std::string timestamp = CrossPlatform::sanitizeFilename(CrossPlatform::now());
-	const std::string base = Options::getUserFolder() + "auto-battle-log-" + timestamp;
+	std::string base = Options::getUserFolder() + "auto-battle-log-" + timestamp;
+	if (!Options::autoBattleSeed.empty())
+	{
+		base += "-seed-" + CrossPlatform::sanitizeFilename(Options::autoBattleSeed);
+	}
 	autoBattleLogTextPath = base + ".txt";
 	autoBattleLogJsonPath = base + ".jsonl";
 }
@@ -3596,6 +3600,11 @@ void SavedBattleGame::startAutoBattleLog() const
 	std::ostringstream log;
 	log << "OpenXcom auto battle log\n";
 	log << "Started: " << CrossPlatform::now() << "\n\n";
+	if (!Options::autoBattleSeed.empty())
+	{
+		log << "Auto battle seed: " << Options::autoBattleSeed << "\n";
+		log << "RNG state: " << RNG::getSeed() << "\n\n";
+	}
 	CrossPlatform::writeFile(getAutoBattleLogTextPath(), log.str());
 
 	const Uint32 ticks = SDL_GetTicks();
@@ -3605,7 +3614,13 @@ void SavedBattleGame::startAutoBattleLog() const
 	json << "{\"event\":\"start\",\"time\":\"" << CrossPlatform::now() << "\""
 		<< ",\"ticks_ms\":" << ticks
 		<< ",\"steady_ns\":" << steadyNs
-		<< ",\"dt_ms\":0}\n";
+		<< ",\"dt_ms\":0";
+	if (!Options::autoBattleSeed.empty())
+	{
+		json << ",\"auto_battle_seed\":\"" << autoBattleJsonEscape(Options::autoBattleSeed) << "\""
+			<< ",\"rng_state\":" << RNG::getSeed();
+	}
+	json << "}\n";
 	CrossPlatform::writeFile(getAutoBattleLogJsonPath(), json.str());
 }
 

@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <functional>
 #include <ctime>
+#include <cstdlib>
 #include "../Engine/Yaml.h"
 #include "../version.h"
 #include "../Engine/Logger.h"
@@ -394,6 +395,10 @@ void SavedGame::load(const std::string &filename, Mod *mod, Language *lang)
 	reader.tryRead("end", _end);
 	if (reader["rng"] && (_ironman || !Options::newSeedOnLoad))
 		RNG::setSeed(reader["rng"].readVal<uint64_t>());
+	if (Options::autoBattle && !Options::autoBattleSeed.empty())
+	{
+		RNG::setSeed(static_cast<uint64_t>(std::strtoull(Options::autoBattleSeed.c_str(), 0, 10)));
+	}
 	reader.tryRead("monthsPassed", _monthsPassed);
 	reader.tryRead("daysPassed", _daysPassed);
 	reader.tryRead("vehiclesLost", _vehiclesLost);

@@ -71,6 +71,15 @@ std::string factionAIJsonEscape(const std::string &value)
 	return escaped.str();
 }
 
+bool factionAIRoomActsOpen(const BattleRoomInfo &room)
+{
+	return room.isOutside
+		|| room.isHall
+		|| room.tileCount > 60
+		|| room.openingCount > room.tileCount * 2
+		|| (room.entryPositions.empty() && room.doorCount + room.windowCount == 0);
+}
+
 }
 
 FactionAI::FactionAI(SavedBattleGame *save, UnitFaction faction) : _save(save), _faction(faction), _roomCacheSignature(0)
@@ -728,7 +737,7 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 			contact.roomWindows = room->windowCount;
 			contact.roomOpenings = room->openingCount;
 			contact.roomOutside = room->isOutside;
-			contact.roomHall = room->isHall;
+			contact.roomHall = room->isHall || (!room->isOutside && factionAIRoomActsOpen(*room));
 		}
 		for (auto* ally : _playerPlan.allies)
 		{
@@ -811,14 +820,16 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 				}
 			}
 			const int assignedCount = assignedCountByEnemyId[contact.enemy->getId()];
-			int maxAssignees = contact.visibleContact ? 2 : (int)_playerPlan.allies.size();
+			int maxAssignees = contact.visibleContact
+				? std::max(3, (int)contact.canShootBy.size() + std::max(0, (int)contact.visibleBy.size() - (int)contact.canShootBy.size()) / 2)
+				: (int)_playerPlan.allies.size();
 			if (contact.visibleContact && (contact.threatScore >= 130 || contact.canShootBy.size() >= 2))
 			{
-				maxAssignees = 3;
+				maxAssignees = std::max(maxAssignees, 5);
 			}
 			if (contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= 35)
 			{
-				maxAssignees = 4;
+				maxAssignees = std::max(maxAssignees, 6);
 			}
 			if (assignedCount >= maxAssignees && !canShoot)
 			{
