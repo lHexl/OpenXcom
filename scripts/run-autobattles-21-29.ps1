@@ -12,6 +12,10 @@ if (-not (Test-Path -LiteralPath $openxcom)) {
     exit 1
 }
 
+Get-ChildItem $openxcomUser -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like 'auto-battle-log-*' -or $_.Name -like 'auto-battle-map-*' } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
 $jobs = foreach ($save in $saves) {
     foreach ($run in 1..$runsPerSave) {
         $seed = ($save * 1000) + $run
@@ -30,6 +34,7 @@ $jobs = foreach ($save in $saves) {
                 '-load', "$save.sav",
                 '-playIntro', 'false',
                 '-autoBattle', 'true',
+                '-autoQuitAfterBattle', 'true',
                 '-autoBattleLog', 'true',
                 '-autoBattleSeed', "$seed"
             )

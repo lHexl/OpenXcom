@@ -54,6 +54,29 @@ struct PendingPlayerGrenadeDanger
 
 std::vector<PendingPlayerGrenadeDanger> pendingPlayerGrenadeDangers;
 
+struct PendingPlayerProximityMinePlan
+{
+	SavedBattleGame *save;
+	int turn;
+	UnitFaction faction;
+	Position contact;
+	Position target;
+};
+
+std::vector<PendingPlayerProximityMinePlan> pendingPlayerProximityMinePlans;
+
+struct PendingPlayerProximityMineStaging
+{
+	SavedBattleGame *save;
+	int turn;
+	int unitId;
+	UnitFaction faction;
+	Position contact;
+	Position target;
+};
+
+std::vector<PendingPlayerProximityMineStaging> pendingPlayerProximityMineStagings;
+
 struct PlayerMovementMemory
 {
 	SavedBattleGame *save;
@@ -83,6 +106,132 @@ void cleanupPendingPlayerGrenadeDangers(SavedBattleGame *save)
 	{
 		pendingPlayerGrenadeDangers.erase(pendingPlayerGrenadeDangers.begin(), pendingPlayerGrenadeDangers.end() - 64);
 	}
+}
+
+void cleanupPendingPlayerProximityMinePlans(SavedBattleGame *save)
+{
+	if (!save)
+	{
+		pendingPlayerProximityMinePlans.clear();
+		return;
+	}
+	const int turn = save->getTurn();
+	pendingPlayerProximityMinePlans.erase(std::remove_if(pendingPlayerProximityMinePlans.begin(), pendingPlayerProximityMinePlans.end(),
+		[save, turn](const PendingPlayerProximityMinePlan &plan)
+		{
+			return plan.save != save || plan.turn + 4 < turn;
+		}), pendingPlayerProximityMinePlans.end());
+	if (pendingPlayerProximityMinePlans.size() > 64)
+	{
+		pendingPlayerProximityMinePlans.erase(pendingPlayerProximityMinePlans.begin(), pendingPlayerProximityMinePlans.end() - 64);
+	}
+}
+
+void cleanupPendingPlayerProximityMineStagings(SavedBattleGame *save)
+{
+	if (!save)
+	{
+		pendingPlayerProximityMineStagings.clear();
+		return;
+	}
+	const int turn = save->getTurn();
+	pendingPlayerProximityMineStagings.erase(std::remove_if(pendingPlayerProximityMineStagings.begin(), pendingPlayerProximityMineStagings.end(),
+		[save, turn](const PendingPlayerProximityMineStaging &plan)
+		{
+			return plan.save != save || plan.turn + 3 < turn;
+		}), pendingPlayerProximityMineStagings.end());
+	if (pendingPlayerProximityMineStagings.size() > 64)
+	{
+		pendingPlayerProximityMineStagings.erase(pendingPlayerProximityMineStagings.begin(), pendingPlayerProximityMineStagings.end() - 64);
+	}
+}
+
+bool getPlayerProximityMineStaging(SavedBattleGame *save, int unitId, Position *target, Position *contact)
+{
+	cleanupPendingPlayerProximityMineStagings(save);
+	for (const auto &plan : pendingPlayerProximityMineStagings)
+	{
+		if (plan.unitId == unitId)
+		{
+			if (target)
+			{
+				*target = plan.target;
+			}
+			if (contact)
+			{
+				*contact = plan.contact;
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+void recordPlayerProximityMineStaging(SavedBattleGame *save, BattleUnit *unit, UnitFaction faction, const Position &contact, const Position &target)
+{
+	if (!save || !unit)
+	{
+		return;
+	}
+	cleanupPendingPlayerProximityMineStagings(save);
+	for (auto &plan : pendingPlayerProximityMineStagings)
+	{
+		if (plan.unitId == unit->getId())
+		{
+			plan.turn = save->getTurn();
+			plan.faction = faction;
+			plan.contact = contact;
+			plan.target = target;
+			return;
+		}
+	}
+	PendingPlayerProximityMineStaging plan = { save, save->getTurn(), unit->getId(), faction, contact, target };
+	pendingPlayerProximityMineStagings.push_back(plan);
+}
+
+void clearPlayerProximityMineStaging(SavedBattleGame *save, int unitId)
+{
+	cleanupPendingPlayerProximityMineStagings(save);
+	pendingPlayerProximityMineStagings.erase(std::remove_if(pendingPlayerProximityMineStagings.begin(), pendingPlayerProximityMineStagings.end(),
+		[unitId](const PendingPlayerProximityMineStaging &plan)
+		{
+			return plan.unitId == unitId;
+		}), pendingPlayerProximityMineStagings.end());
+}
+
+bool isRecentPlayerProximityMinePlan(SavedBattleGame *save, UnitFaction faction, const Position &contact)
+{
+	cleanupPendingPlayerProximityMinePlans(save);
+	for (const auto &plan : pendingPlayerProximityMinePlans)
+	{
+		if (plan.faction == faction
+			&& plan.contact.z == contact.z
+			&& Position::distance2d(plan.contact, contact) <= 8)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void recordPlayerProximityMinePlan(SavedBattleGame *save, UnitFaction faction, const Position &contact, const Position &target)
+{
+	if (!save)
+	{
+		return;
+	}
+	cleanupPendingPlayerProximityMinePlans(save);
+	for (const auto &plan : pendingPlayerProximityMinePlans)
+	{
+		if (plan.faction == faction
+			&& plan.contact.z == contact.z
+			&& Position::distance2d(plan.contact, contact) <= 8)
+		{
+			return;
+		}
+	}
+	PendingPlayerProximityMinePlan plan = { save, save->getTurn(), faction, contact, target };
+	pendingPlayerProximityMinePlans.push_back(plan);
 }
 
 bool isPendingPlayerGrenadeDanger(SavedBattleGame *save, UnitFaction faction, const Position &pos)
@@ -730,6 +879,10 @@ bool PlayerFactionAI::tryEquipGroundWeapon(BattleItem *item)
 		BattleItem *leftHand = _unit->getItem(_save->getMod()->getInventoryLeftHand());
 		const int rightScore = scoreWeaponForUnit(rightHand);
 		const int leftScore = scoreWeaponForUnit(leftHand);
+		if (rightScore > -50000 && leftScore > -50000)
+		{
+			return false;
+		}
 		if (rightScore <= leftScore)
 		{
 			slot = _save->getMod()->getInventoryRightHand();
@@ -799,6 +952,42 @@ bool PlayerFactionAI::tryEquipGroundExplosive(BattleItem *item)
 	}
 	const RuleInventory *slot = 0;
 	BattleItem *replaced = 0;
+	if (item->getRules()->getBattleType() == BT_PROXIMITYGRENADE)
+	{
+		const RuleInventory *utilitySlots[2] = { _save->getMod()->getInventoryBelt(), _save->getMod()->getInventoryBackpack() };
+		for (const RuleInventory *candidateSlot : utilitySlots)
+		{
+			if (!candidateSlot)
+			{
+				continue;
+			}
+			const int tuCost = item->getMoveToCost(candidateSlot);
+			if (_unit->getTimeUnits() < tuCost)
+			{
+				continue;
+			}
+			if (_unit->fitItemToInventory(candidateSlot, item))
+			{
+				_unit->spendTimeUnits(tuCost);
+				_weaponPickedUp = true;
+				_grenade = true;
+				if (Options::autoBattleLog)
+				{
+					std::ostringstream log;
+					log << "Player faction proximity mine pocket pickup: unit=" << _unit->getId()
+						<< ", item=" << item->getRules()->getType()
+						<< ", itemScore=" << itemScore
+						<< ", radius=" << radius
+						<< ", power=" << item->getRules()->getPower()
+						<< ", tuCost=" << tuCost
+						<< ", position=" << _unit->getPosition();
+					_save->appendToAutoBattleLog(log.str());
+				}
+				return true;
+			}
+		}
+		return false;
+	}
 	if (!_unit->getItem(_save->getMod()->getInventoryRightHand()))
 	{
 		slot = _save->getMod()->getInventoryRightHand();
@@ -883,12 +1072,21 @@ bool PlayerFactionAI::setupRoleWeaponPickup(BattleAction *action)
 	int bestScore = currentScore + requiredGain;
 	int bestMoveDist = 100000;
 	bool hasCarriedExplosive = false;
+	bool hasCarriedProximityMine = false;
 	for (auto *carried : *_unit->getInventory())
 	{
-		if (carried && carried->getRules()->isGrenadeOrProxy() && _save->getTurn() >= carried->getRules()->getAIUseDelay(_save->getMod()))
+		if (!carried || !carried->getRules()->isGrenadeOrProxy())
+		{
+			continue;
+		}
+		if (carried->getRules()->getBattleType() == BT_PROXIMITYGRENADE)
+		{
+			hasCarriedProximityMine = true;
+			hasCarriedExplosive = true;
+		}
+		else if (_save->getTurn() >= carried->getRules()->getAIUseDelay(_save->getMod()))
 		{
 			hasCarriedExplosive = true;
-			break;
 		}
 	}
 
@@ -906,6 +1104,10 @@ bool PlayerFactionAI::setupRoleWeaponPickup(BattleAction *action)
 		{
 			if (item && item->getRules()->isGrenadeOrProxy())
 			{
+				if (item->getRules()->getBattleType() == BT_PROXIMITYGRENADE && hasCarriedProximityMine)
+				{
+					continue;
+				}
 				BattleAction grenadeAction;
 				grenadeAction.actor = _unit;
 				grenadeAction.weapon = item;
@@ -2615,6 +2817,15 @@ void PlayerFactionAI::setupAttack()
 		}
 	}
 
+	if (_unit->getFaction() == FACTION_PLAYER
+		&& _grenade
+		&& !_visibleEnemies
+		&& !_spottingEnemies
+		&& setupProximityMineAmbush())
+	{
+		return;
+	}
+
 	// if we CAN see someone, that makes them a viable target for "regular" attacks.
 	// This is skipped if sniperAction has already chosen an attack action
 	if (!sniperAttack && selectNearestTarget())
@@ -2687,6 +2898,13 @@ void PlayerFactionAI::setupAttack()
 				Log(LOG_INFO) << "Attack estimation desires to move to " << _attackAction.target;
 			}
 		}
+		return;
+	}
+	else if (_unit->getFaction() == FACTION_PLAYER
+		&& _grenade
+		&& !_spottingEnemies
+		&& setupProximityMineAmbush())
+	{
 		return;
 	}
 	else if (_spottingEnemies || _unit->getAggression() < RNG::generate(0, 3))
@@ -5833,6 +6051,640 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 	return score;
 }
 
+bool PlayerFactionAI::setupProximityMineAmbush()
+{
+	BattleItem *carriedMine = 0;
+	for (auto *item : *_unit->getInventory())
+	{
+		if (item && item->getRules() && item->getRules()->getBattleType() == BT_PROXIMITYGRENADE)
+		{
+			carriedMine = item;
+			break;
+		}
+	}
+	if (!carriedMine)
+	{
+		return false;
+	}
+
+	auto logSkip = [&](const std::string &reason, const Position &contactPos = Position(-1, -1, -1), const BattleRoomInfo *room = 0, int enemiesInRoom = 0)
+	{
+		(void)reason;
+		(void)contactPos;
+		(void)room;
+		(void)enemiesInRoom;
+		return;
+		if (!Options::autoBattleLog)
+		{
+			return;
+		}
+		std::ostringstream log;
+		log << "Player faction proximity mine skip: unit=" << _unit->getId()
+			<< ", reason=" << reason
+			<< ", position=" << _unit->getPosition()
+			<< ", tu=" << _unit->getTimeUnits()
+			<< ", visible=" << _visibleEnemies
+			<< ", spotting=" << _spottingEnemies
+			<< ", contact=" << contactPos
+			<< ", roomEnemies=" << enemiesInRoom;
+		if (room)
+		{
+			log << ", roomSize=" << room->tileCount
+				<< ", roomEntries=" << room->entryPositions.size()
+				<< ", roomOutside=" << room->isOutside
+				<< ", roomHall=" << room->isHall;
+		}
+		_save->appendToAutoBattleLog(log.str());
+	};
+
+	Position stagedTarget;
+	Position stagedContact;
+	if (!_visibleEnemies && !_spottingEnemies && getPlayerProximityMineStaging(_save, _unit->getId(), &stagedTarget, &stagedContact))
+	{
+		BattleAction stagedAction;
+		stagedAction.actor = _unit;
+		stagedAction.weapon = carriedMine;
+		stagedAction.type = BA_THROW;
+		stagedAction.target = stagedTarget;
+		stagedAction.updateTU();
+		stagedAction.Time += 4;
+		stagedAction += _unit->getActionTUs(BA_PRIME, carriedMine);
+		const int stagedRadius = carriedMine->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(stagedAction));
+		const int throwAccuracy = BattleUnit::getFiringAccuracy(BattleActionAttack::GetBeforeShoot(stagedAction), _save->getMod());
+		const int throwLimit = std::max(6, throwAccuracy / 12);
+		const int throwDist = Position::distance2d(stagedTarget, _unit->getPosition());
+		bool blocked = !stagedAction.haveTU() || stagedRadius <= 0 || throwDist > throwLimit || (throwAccuracy < 65 && throwDist > 4);
+		Tile *targetTile = _save->getTile(stagedTarget);
+		if (!targetTile || (targetTile->getUnit() && targetTile->getUnit()->getFaction() == _unit->getFaction()))
+		{
+			blocked = true;
+		}
+		for (auto *ally : *_save->getUnits())
+		{
+			if (!ally || ally->isOut() || ally->getFaction() != _unit->getFaction() || ally->getPosition().z != stagedTarget.z)
+			{
+				continue;
+			}
+			if (Position::distance2d(ally->getPosition(), stagedTarget) <= stagedRadius + 3)
+			{
+				blocked = true;
+				break;
+			}
+		}
+		for (int dx = -(stagedRadius + 2); dx <= stagedRadius + 2 && !blocked; ++dx)
+		{
+			for (int dy = -(stagedRadius + 2); dy <= stagedRadius + 2 && !blocked; ++dy)
+			{
+				Position check(stagedTarget.x + dx, stagedTarget.y + dy, stagedTarget.z);
+				if (Position::distance2d(check, stagedTarget) > stagedRadius + 2)
+				{
+					continue;
+				}
+				Tile *tile = _save->getTile(check);
+				if (!tile)
+				{
+					continue;
+				}
+				for (auto *item : *tile->getInventory())
+				{
+					if (item && item->getRules() && item->getRules()->getBattleType() == BT_PROXIMITYGRENADE)
+					{
+						blocked = true;
+						break;
+					}
+				}
+			}
+		}
+		if (!blocked)
+		{
+			Position originVoxel = _save->getTileEngine()->getOriginVoxel(stagedAction, 0);
+			Position targetVoxel = stagedTarget.toVoxel() + Position(8, 8, (2 + -targetTile->getTerrainLevel()));
+			if (!_save->getTileEngine()->validateThrow(stagedAction, originVoxel, targetVoxel, _save->getDepth()))
+			{
+				blocked = true;
+			}
+		}
+		if (!blocked)
+		{
+			_attackAction.actor = _unit;
+			_attackAction.weapon = carriedMine;
+			_attackAction.target = stagedTarget;
+			_attackAction.type = BA_THROW;
+			recordPendingPlayerGrenadeDanger(_save, _unit->getFaction(), stagedTarget, stagedRadius);
+			recordPlayerProximityMinePlan(_save, _unit->getFaction(), stagedContact, stagedTarget);
+			clearPlayerProximityMineStaging(_save, _unit->getId());
+			_rifle = false;
+			_melee = false;
+			if (Options::autoBattleLog)
+			{
+				std::ostringstream log;
+				log << "Player faction proximity mine staged placement: unit=" << _unit->getId()
+					<< ", item=" << carriedMine->getRules()->getType()
+					<< ", target=" << stagedTarget
+					<< ", contact=" << stagedContact
+					<< ", radius=" << stagedRadius
+					<< ", throwDist=" << throwDist
+					<< ", throwAccuracy=" << throwAccuracy;
+				_save->appendToAutoBattleLog(log.str());
+			}
+			return true;
+		}
+		clearPlayerProximityMineStaging(_save, _unit->getId());
+	}
+
+	if (!_factionAI)
+	{
+		logSkip("no_faction_ai");
+		return false;
+	}
+	Position contactPos;
+	const BattleRoomInfo *room = 0;
+	int enemiesInRoom = 0;
+	bool visibleContact = false;
+	if (!_factionAI->getBestEnemyContactPosition(&contactPos, &room, &enemiesInRoom, &visibleContact) || !room)
+	{
+		logSkip("no_room_contact", contactPos, room, enemiesInRoom);
+		return false;
+	}
+	if (contactPos.z != _unit->getPosition().z)
+	{
+		logSkip("different_z", contactPos, room, enemiesInRoom);
+		return false;
+	}
+	if (isRecentPlayerProximityMinePlan(_save, _unit->getFaction(), contactPos))
+	{
+		logSkip("recent_mine_plan", contactPos, room, enemiesInRoom);
+		return false;
+	}
+	Position allyAnchor;
+	int allyAnchorCount = 0;
+	int bestAllyDistance = 100000;
+	for (auto *ally : *_save->getUnits())
+	{
+		if (!ally || ally->isOut() || ally->getFaction() != _unit->getFaction() || ally->getPosition().z != contactPos.z)
+		{
+			continue;
+		}
+		const int dist = Position::distance2d(ally->getPosition(), contactPos);
+		if (dist < bestAllyDistance)
+		{
+			bestAllyDistance = dist;
+			allyAnchor = ally->getPosition();
+		}
+		++allyAnchorCount;
+	}
+	if (allyAnchorCount == 0)
+	{
+		logSkip("no_ally_anchor", contactPos, room, enemiesInRoom);
+		return false;
+	}
+	const int entries = (int)room->entryPositions.size();
+	const bool mineableRoom = !room->isOutside
+		&& ((!room->isHall && room->tileCount <= 120 && entries > 0 && entries <= 24)
+			|| (room->isHall && room->tileCount <= 40 && entries > 0 && entries <= 12));
+	if (visibleContact || _visibleEnemies > 0)
+	{
+		logSkip("visible_contact", contactPos, room, enemiesInRoom);
+		return false;
+	}
+	int contactThreat = 0;
+	int contactArmor = 0;
+	int contactHealth = 0;
+	if (Tile *contactTile = _save->getTile(contactPos))
+	{
+		if (BattleUnit *contactUnit = contactTile->getUnit())
+		{
+			if (validTarget(contactUnit, true, true))
+			{
+				const int minePower = std::max(0, carriedMine->getRules()->getPower());
+				contactHealth = contactUnit->getHealth();
+				contactArmor = std::max(std::max(contactUnit->getArmor(SIDE_FRONT), contactUnit->getArmor(SIDE_LEFT)), contactUnit->getArmor(SIDE_RIGHT));
+				BattleItem *enemyWeapon = contactUnit->getMainHandWeapon(false);
+				int enemyWeaponDanger = 0;
+				if (enemyWeapon && enemyWeapon->getRules())
+				{
+					const RuleItem *enemyRule = enemyWeapon->getRules();
+					enemyWeaponDanger = std::max(0, enemyRule->getPower())
+						+ std::max(std::max(enemyRule->getAccuracySnap(), enemyRule->getAccuracyAimed()), enemyRule->getAccuracyAuto()) / 2;
+				}
+				contactThreat = contactHealth + contactArmor + enemyWeaponDanger;
+				(void)minePower;
+			}
+		}
+	}
+	const bool fieldMine = !mineableRoom && bestAllyDistance >= 10 && bestAllyDistance <= 26 && contactThreat >= 145;
+	if (!mineableRoom && !fieldMine)
+	{
+		logSkip("room_not_mineable", contactPos, room, enemiesInRoom);
+		return false;
+	}
+	bool mineWorthyContact = enemiesInRoom >= 2 || entries <= 2 || contactHealth >= 100 || contactArmor >= std::max(0, carriedMine->getRules()->getPower()) || contactThreat >= (fieldMine ? 145 : 190);
+	if (!mineWorthyContact)
+	{
+		logSkip("low_value_contact", contactPos, room, enemiesInRoom);
+		return false;
+	}
+
+	int enemyMoveRadius = 10 + std::min(6, enemiesInRoom * 2);
+	if (Tile *contactTile = _save->getTile(contactPos))
+	{
+		if (BattleUnit *contactUnit = contactTile->getUnit())
+		{
+			if (contactUnit->getFaction() == FACTION_HOSTILE && contactUnit->getBaseStats())
+			{
+				enemyMoveRadius = std::max(6, std::min(18, contactUnit->getBaseStats()->tu / 4));
+			}
+		}
+	}
+
+	auto tileHasProximityMine = [&](const Position &pos) -> bool
+	{
+		Tile *tile = _save->getTile(pos);
+		if (!tile)
+		{
+			return true;
+		}
+		for (auto *item : *tile->getInventory())
+		{
+			if (item && item->getRules() && item->getRules()->getBattleType() == BT_PROXIMITYGRENADE)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	auto tileHasNearbyProximityMine = [&](const Position &pos, int radius) -> bool
+	{
+		for (int dx = -radius; dx <= radius; ++dx)
+		{
+			for (int dy = -radius; dy <= radius; ++dy)
+			{
+				Position check(pos.x + dx, pos.y + dy, pos.z);
+				if (Position::distance2d(check, pos) > radius)
+				{
+					continue;
+				}
+				Tile *tile = _save->getTile(check);
+				if (!tile)
+				{
+					continue;
+				}
+				for (auto *item : *tile->getInventory())
+				{
+					if (item && item->getRules() && item->getRules()->getBattleType() == BT_PROXIMITYGRENADE)
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	};
+
+	auto allyTooCloseToMine = [&](const Position &pos, int radius) -> bool
+	{
+		for (auto *ally : *_save->getUnits())
+		{
+			if (!ally || ally->isOut() || ally->getFaction() != _unit->getFaction() || ally->getPosition().z != pos.z)
+			{
+				continue;
+			}
+			if (Position::distance2d(ally->getPosition(), pos) <= radius + 3)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	std::vector<Position> candidates;
+	auto addCandidate = [&](const Position &pos)
+	{
+		if (pos.z != _unit->getPosition().z || !_save->getTile(pos) || isPendingPlayerGrenadeDanger(_save, _unit->getFaction(), pos) || tileHasProximityMine(pos))
+		{
+			return;
+		}
+		for (const auto &existing : candidates)
+		{
+			if (existing == pos)
+			{
+				return;
+			}
+		}
+		candidates.push_back(pos);
+	};
+
+	if (fieldMine)
+	{
+		int pathX = (contactPos.x > allyAnchor.x) - (contactPos.x < allyAnchor.x);
+		int pathY = (contactPos.y > allyAnchor.y) - (contactPos.y < allyAnchor.y);
+		if (pathX != 0 || pathY != 0)
+		{
+			const Position path(pathX, pathY, 0);
+			const Position sideA(-pathY, pathX, 0);
+			const Position sideB(pathY, -pathX, 0);
+			for (int step = 7; step <= std::min(12, bestAllyDistance - 3); ++step)
+			{
+				Position pathTile = allyAnchor + Position(path.x * step, path.y * step, 0);
+				if (Position::distance2d(pathTile, contactPos) <= enemyMoveRadius + 4)
+				{
+					addCandidate(pathTile);
+					addCandidate(pathTile + sideA);
+					addCandidate(pathTile + sideB);
+				}
+			}
+		}
+	}
+	else for (const auto &entry : room->entryPositions)
+	{
+		if (entry.z != _unit->getPosition().z || Position::distance2d(entry, contactPos) > enemyMoveRadius + 2)
+		{
+			continue;
+		}
+		if (Position::distance2d(entry, allyAnchor) > Position::distance2d(contactPos, allyAnchor) + 2)
+		{
+			continue;
+		}
+		int pathX = (allyAnchor.x > entry.x) - (allyAnchor.x < entry.x);
+		int pathY = (allyAnchor.y > entry.y) - (allyAnchor.y < entry.y);
+		if (pathX == 0 && pathY == 0)
+		{
+			pathX = (entry.x > contactPos.x) - (entry.x < contactPos.x);
+			pathY = (entry.y > contactPos.y) - (entry.y < contactPos.y);
+		}
+		if (pathX != 0 || pathY != 0)
+		{
+			const Position path(pathX, pathY, 0);
+			const Position sideA(-pathY, pathX, 0);
+			const Position sideB(pathY, -pathX, 0);
+			for (int step = 0; step <= 3; ++step)
+			{
+				Position pathTile = entry + Position(path.x * step, path.y * step, 0);
+				if (Position::distance2d(pathTile, contactPos) <= enemyMoveRadius + 4
+					&& Position::distance2d(pathTile, allyAnchor) <= Position::distance2d(entry, allyAnchor) + 1)
+				{
+					addCandidate(pathTile);
+					if (step > 0)
+					{
+						addCandidate(pathTile + sideA);
+						addCandidate(pathTile + sideB);
+					}
+				}
+			}
+		}
+	}
+	if (candidates.empty())
+	{
+		logSkip("no_candidate_tiles", contactPos, room, enemiesInRoom);
+		return false;
+	}
+
+	BattleAction bestAction;
+	bestAction.type = BA_RETHINK;
+	bestAction.actor = _unit;
+	int bestScore = -100000;
+	int bestRadius = 0;
+	Position bestStageMineTarget;
+	BattleItem *bestStageMine = 0;
+	int bestStageScore = -100000;
+	int bestStageRadius = 0;
+	int bestStageThrowLimit = 0;
+
+	for (auto *mine : *_unit->getInventory())
+	{
+		if (!mine || !mine->getRules() || mine->getRules()->getBattleType() != BT_PROXIMITYGRENADE)
+		{
+			continue;
+		}
+		BattleAction action;
+		action.actor = _unit;
+		action.weapon = mine;
+		action.type = BA_THROW;
+		action.updateTU();
+		action.Time += 4;
+		action += _unit->getActionTUs(BA_PRIME, mine);
+		if (!action.haveTU())
+		{
+			continue;
+		}
+		const int radius = mine->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(action));
+		if (radius <= 0)
+		{
+			continue;
+		}
+		const int throwAccuracy = BattleUnit::getFiringAccuracy(BattleActionAttack::GetBeforeShoot(action), _save->getMod());
+		const int throwLimit = std::max(6, throwAccuracy / 12);
+		Position originVoxel = _save->getTileEngine()->getOriginVoxel(action, 0);
+		for (const auto &target : candidates)
+		{
+			Tile *tile = _save->getTile(target);
+			if (!tile || (tile->getUnit() && tile->getUnit()->getFaction() == _unit->getFaction()))
+			{
+				continue;
+			}
+			const int throwDist = Position::distance2d(target, _unit->getPosition());
+			if (tileHasNearbyProximityMine(target, radius + 2))
+			{
+				continue;
+			}
+			if (allyTooCloseToMine(target, radius))
+			{
+				continue;
+			}
+			const int contactDist = Position::distance2d(target, contactPos);
+			const int pathProgress = Position::distance2d(contactPos, allyAnchor) - Position::distance2d(target, allyAnchor);
+			int tacticalScore = 115 + radius * 10 + std::min(90, enemiesInRoom * 40) + std::min(90, contactThreat / 3);
+			tacticalScore += std::max(0, pathProgress) * 8;
+			tacticalScore += std::min(60, throwAccuracy - 50);
+			tacticalScore += entries <= 2 ? 45 : 0;
+			tacticalScore += (fieldMine || _factionAI->getRoomIdAt(target) != room->id) ? 35 : 0;
+			tacticalScore -= std::max(0, contactDist - enemyMoveRadius) * 15;
+			tacticalScore -= contactDist <= 1 ? 70 : 0;
+			tacticalScore -= fieldMine ? std::max(0, 7 - Position::distance2d(target, allyAnchor)) * 30 : 0;
+			if (!room->isHall)
+			{
+				tacticalScore += 25;
+			}
+			if (throwDist > throwLimit || (throwAccuracy < 65 && throwDist > 4))
+			{
+				if (tacticalScore > bestStageScore)
+				{
+					bestStageScore = tacticalScore;
+					bestStageMineTarget = target;
+					bestStageMine = mine;
+					bestStageRadius = radius;
+					bestStageThrowLimit = throwLimit;
+				}
+				continue;
+			}
+			action.target = target;
+			Position targetVoxel = target.toVoxel() + Position(8, 8, (2 + -tile->getTerrainLevel()));
+			if (!_save->getTileEngine()->validateThrow(action, originVoxel, targetVoxel, _save->getDepth()))
+			{
+				continue;
+			}
+			int score = scorePlayerGrenadeTarget(mine, target, radius, true);
+			if (score < -50000)
+			{
+				continue;
+			}
+			score += tacticalScore;
+			score -= throwDist * 2;
+			if (score > bestScore)
+			{
+				bestScore = score;
+				bestAction = action;
+				bestAction.target = target;
+				bestRadius = radius;
+			}
+		}
+	}
+
+	if (bestAction.type == BA_RETHINK || bestScore < 170)
+	{
+		if (bestStageMine && bestStageScore >= 175 && !_reachable.empty())
+		{
+			auto coverScoreAt = [&](const Position &pos) -> int
+			{
+				Tile *tile = _save->getTile(pos);
+				if (!tile)
+				{
+					return 0;
+				}
+				int score = 0;
+				if (tile->getMapData(O_OBJECT))
+				{
+					score += 8;
+				}
+				if (tile->getMapData(O_NORTHWALL))
+				{
+					score += contactPos.y < pos.y ? 14 : 5;
+				}
+				if (tile->getMapData(O_WESTWALL))
+				{
+					score += contactPos.x < pos.x ? 14 : 5;
+				}
+				return score;
+			};
+			Position bestStagePos;
+			int bestStageMoveScore = -100000;
+			int bestStageMoveTU = 0;
+			for (auto tileIndex : _reachable)
+			{
+				Tile *tile = _save->getTile(tileIndex);
+				if (!tile || tile->getDangerous() || (tile->getUnit() && tile->getUnit() != _unit))
+				{
+					continue;
+				}
+				Position pos = tile->getPosition();
+				if (pos == _unit->getPosition() || pos.z != _unit->getPosition().z || isPendingPlayerGrenadeDanger(_save, _unit->getFaction(), pos))
+				{
+					continue;
+				}
+				const int futureThrowDist = Position::distance2d(pos, bestStageMineTarget);
+				if (futureThrowDist > bestStageThrowLimit || (bestStageThrowLimit <= 6 && futureThrowDist > 4))
+				{
+					continue;
+				}
+				if (Position::distance2d(pos, contactPos) <= bestStageRadius + 2)
+				{
+					continue;
+				}
+				_save->getPathfinding()->calculate(_unit, pos, BAM_NORMAL);
+				if (_save->getPathfinding()->getStartDirection() == -1)
+				{
+					_save->getPathfinding()->abortPath();
+					continue;
+				}
+				const int moveTU = _save->getPathfinding()->getTotalTUCost();
+				_save->getPathfinding()->abortPath();
+				if (moveTU > std::max(10, _unit->getTimeUnits() / 2))
+				{
+					continue;
+				}
+				const int spotters = getSpottingUnits(pos);
+				if (spotters > 0)
+				{
+					continue;
+				}
+				const int exposure = getEnemyFireExposure(pos);
+				if (exposure > 70)
+				{
+					continue;
+				}
+				int score = bestStageScore + coverScoreAt(pos) * 5;
+				score -= moveTU * 2;
+				score -= exposure;
+				score -= futureThrowDist * 4;
+				score += std::max(0, Position::distance2d(_unit->getPosition(), bestStageMineTarget) - futureThrowDist) * 6;
+				if (score > bestStageMoveScore)
+				{
+					bestStageMoveScore = score;
+					bestStagePos = pos;
+					bestStageMoveTU = moveTU;
+				}
+			}
+			if (bestStageMoveScore >= 190)
+			{
+				_attackAction.actor = _unit;
+				_attackAction.weapon = selectBestCarriedWeapon();
+				_attackAction.target = bestStagePos;
+				_attackAction.type = BA_WALK;
+				_attackAction.finalFacing = _save->getTileEngine()->getDirectionTo(bestStagePos, contactPos);
+				_AIMode = AI_COMBAT;
+				recordPlayerProximityMineStaging(_save, _unit, _unit->getFaction(), contactPos, bestStageMineTarget);
+				if (Options::autoBattleLog)
+				{
+					std::ostringstream log;
+					log << "Player faction proximity mine staging: unit=" << _unit->getId()
+						<< ", mine=" << bestStageMine->getRules()->getType()
+						<< ", mineTarget=" << bestStageMineTarget
+						<< ", moveTarget=" << bestStagePos
+						<< ", score=" << bestStageMoveScore
+						<< ", moveTU=" << bestStageMoveTU
+						<< ", contact=" << contactPos
+						<< ", radius=" << bestStageRadius
+						<< ", throwLimit=" << bestStageThrowLimit
+						<< ", roomEnemies=" << enemiesInRoom
+						<< ", roomSize=" << room->tileCount
+						<< ", roomEntries=" << entries;
+					_save->appendToAutoBattleLog(log.str());
+				}
+				return true;
+			}
+		}
+		logSkip(bestAction.type == BA_RETHINK ? "no_throw_solution" : "score_too_low", contactPos, room, enemiesInRoom);
+		return false;
+	}
+
+	_attackAction.actor = _unit;
+	_attackAction.weapon = bestAction.weapon;
+	_attackAction.target = bestAction.target;
+	_attackAction.type = BA_THROW;
+	recordPendingPlayerGrenadeDanger(_save, _unit->getFaction(), bestAction.target, bestRadius);
+	recordPlayerProximityMinePlan(_save, _unit->getFaction(), contactPos, bestAction.target);
+	_rifle = false;
+	_melee = false;
+	if (Options::autoBattleLog)
+	{
+		std::ostringstream log;
+		log << "Player faction proximity mine ambush: unit=" << _unit->getId()
+			<< ", item=" << bestAction.weapon->getRules()->getType()
+			<< ", target=" << bestAction.target
+			<< ", score=" << bestScore
+			<< ", radius=" << bestRadius
+			<< ", contact=" << contactPos
+			<< ", enemyMoveRadius=" << enemyMoveRadius
+			<< ", roomEnemies=" << enemiesInRoom
+			<< ", roomSize=" << room->tileCount
+			<< ", roomEntries=" << entries
+			<< ", fieldMine=" << fieldMine;
+		_save->appendToAutoBattleLog(log.str());
+	}
+	return true;
+}
+
 /**
  * Evaluates whether to throw a grenade at an enemy (or group of enemies) we can see.
  */
@@ -5846,9 +6698,34 @@ void PlayerFactionAI::grenadeAction()
 
 	auto tryGrenadeTarget = [&](BattleItem *grenade, const Position &baseTarget, const std::string &reason)
 	{
-		if (!grenade || !grenade->getRules()->isGrenadeOrProxy() || _save->getTurn() < grenade->getRules()->getAIUseDelay(_save->getMod()))
+		if (!grenade || !grenade->getRules()->isGrenadeOrProxy())
 		{
 			return;
+		}
+		const bool proximity = grenade->getRules()->getBattleType() == BT_PROXIMITYGRENADE;
+		if (!proximity && _save->getTurn() < grenade->getRules()->getAIUseDelay(_save->getMod()))
+		{
+			return;
+		}
+		if (proximity)
+		{
+			if (reason.find("visible") != std::string::npos)
+			{
+				return;
+			}
+			Position contactPos;
+			const BattleRoomInfo *contactRoom = 0;
+			int enemiesInRoom = 0;
+			bool visibleContact = false;
+			const bool hasContact = _factionAI && _factionAI->getBestEnemyContactPosition(&contactPos, &contactRoom, &enemiesInRoom, &visibleContact);
+			const int entries = contactRoom ? (int)contactRoom->entryPositions.size() : 0;
+			const bool mineableRoom = contactRoom && !contactRoom->isOutside
+				&& ((!contactRoom->isHall && contactRoom->tileCount <= 120 && entries > 0 && entries <= 24)
+					|| (contactRoom->isHall && contactRoom->tileCount <= 40 && entries > 0 && entries <= 12));
+			if (!hasContact || !mineableRoom)
+			{
+				return;
+			}
 		}
 		BattleAction action;
 		action.weapon = grenade;
@@ -5867,7 +6744,6 @@ void PlayerFactionAI::grenadeAction()
 		{
 			return;
 		}
-		const bool proximity = grenade->getRules()->getBattleType() == BT_PROXIMITYGRENADE;
 		std::vector<std::pair<Position, int>> shifts;
 		if (proximity)
 		{
@@ -5952,11 +6828,13 @@ void PlayerFactionAI::grenadeAction()
 					score -= Position::distance2d(targetTile, _unit->getPosition()) * 2;
 					if (reason.find("room_entry") != std::string::npos)
 					{
-						score += 110;
+						score += 170;
+						score += radius * 12;
 					}
 					else if (reason.find("hidden_contact") != std::string::npos)
 					{
-						score += 70;
+						score += 105;
+						score += radius * 8;
 					}
 					if (getSpottingUnits(_unit->getPosition()) > 0 && score < 180)
 					{
@@ -6024,7 +6902,7 @@ void PlayerFactionAI::grenadeAction()
 				{
 					for (const auto &entry : room->entryPositions)
 					{
-						if (entry.z == _unit->getPosition().z && Position::distance2d(entry, _unit->getPosition()) <= 16)
+						if (entry.z == _unit->getPosition().z && Position::distance2d(entry, _unit->getPosition()) <= 22)
 						{
 							tryGrenadeTarget(item, entry, "room_entry_sensor_grenade");
 						}

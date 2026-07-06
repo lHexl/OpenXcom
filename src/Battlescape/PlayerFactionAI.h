@@ -77,6 +77,7 @@ private:
 	void meleeActionLeeroy(bool canRun);
 	void dont_think(BattleAction *action);
 	bool setupFactionStalkAmbush(const Position &contactPos, const BattleRoomInfo *contactRoom, int enemiesInRoom, BattleItem *weapon);
+	bool setupProximityMineAmbush();
 	PlayerAIRole getPlayerAIRole(BattleItem *weapon) const;
 	int getPreferredEngagementRange(BattleItem *weapon) const;
 	int scoreWeaponForUnit(BattleItem *weapon) const;
