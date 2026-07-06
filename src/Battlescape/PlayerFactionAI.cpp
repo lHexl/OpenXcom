@@ -22,6 +22,7 @@
 #include <vector>
 #include "PlayerFactionAI.h"
 #include "FactionAI.h"
+#include "PlayerFactionPlanner.h"
 #include "../Savegame/BattleItem.h"
 #include "../Savegame/Node.h"
 #include "../Savegame/SavedBattleGame.h"
@@ -728,6 +729,174 @@ PlayerFactionAI::PlayerAIRole PlayerFactionAI::getPlayerAIRole(BattleItem *weapo
 	return ROLE_SUPPORT;
 }
 
+const char *PlayerFactionAI::getPlayerAIRoleName(PlayerAIRole role) const
+{
+	switch (role)
+	{
+	case ROLE_SUPPORT:
+		return "support";
+	case ROLE_ASSAULT:
+		return "assault";
+	case ROLE_MARKSMAN:
+		return "marksman";
+	case ROLE_HEAVY:
+		return "heavy";
+	case ROLE_MELEE:
+		return "melee";
+	default:
+		return "unknown";
+	}
+}
+
+PlayerFactionStrategy PlayerFactionAI::getFactionStrategy() const
+{
+	return _factionAI ? _factionAI->getPlayerStrategy() : PFS_HOLD_REACTION;
+}
+
+const char *PlayerFactionAI::getFactionStrategyName(PlayerFactionStrategy strategy) const
+{
+	switch (strategy)
+	{
+	case PFS_INITIAL_DEPLOY:
+		return "initial_deploy";
+	case PFS_DEFEND_LINE:
+		return "defend_line";
+	case PFS_SIEGE_ROOM:
+		return "siege_room";
+	case PFS_HUNT_LAST_ENEMY:
+		return "hunt_last_enemy";
+	case PFS_SURVIVE:
+		return "survive";
+	case PFS_RETREAT_REGROUP:
+		return "retreat_regroup";
+	case PFS_ASSAULT:
+		return "assault";
+	case PFS_HOLD_REACTION:
+	default:
+		return "hold_reaction";
+	}
+}
+
+void PlayerFactionAI::applyFactionStrategyToModeOdds(PlayerFactionStrategy strategy, PlayerAIRole role, int *escapeOdds, int *ambushOdds, int *combatOdds, int *patrolOdds) const
+{
+	auto scale = [](int value, int percent) -> int
+	{
+		return std::max(0, value * percent / 100);
+	};
+
+	switch (strategy)
+	{
+	case PFS_INITIAL_DEPLOY:
+		*escapeOdds = scale(*escapeOdds, 130);
+		*ambushOdds = scale(*ambushOdds, 185);
+		*combatOdds = scale(*combatOdds, 85);
+		*patrolOdds = scale(*patrolOdds, 25);
+		if (role == ROLE_MARKSMAN || role == ROLE_HEAVY)
+		{
+			*ambushOdds = scale(*ambushOdds, 125);
+		}
+		else if (role == ROLE_ASSAULT)
+		{
+			*combatOdds = scale(*combatOdds, 110);
+		}
+		break;
+	case PFS_DEFEND_LINE:
+		*escapeOdds = scale(*escapeOdds, 110);
+		*ambushOdds = scale(*ambushOdds, 210);
+		*combatOdds = scale(*combatOdds, 75);
+		*patrolOdds = scale(*patrolOdds, 35);
+		if (role == ROLE_MARKSMAN || role == ROLE_HEAVY)
+		{
+			*ambushOdds = scale(*ambushOdds, 125);
+		}
+		else if (role == ROLE_ASSAULT)
+		{
+			*combatOdds = scale(*combatOdds, 115);
+		}
+		break;
+	case PFS_SIEGE_ROOM:
+		*escapeOdds = scale(*escapeOdds, 115);
+		*ambushOdds = scale(*ambushOdds, 240);
+		*combatOdds = scale(*combatOdds, 70);
+		*patrolOdds = scale(*patrolOdds, 20);
+		if (role == ROLE_ASSAULT || role == ROLE_MELEE)
+		{
+			*ambushOdds = scale(*ambushOdds, 125);
+		}
+		if (role == ROLE_MARKSMAN)
+		{
+			*combatOdds = scale(*combatOdds, 80);
+		}
+		break;
+	case PFS_HOLD_REACTION:
+		*escapeOdds = scale(*escapeOdds, 105);
+		*ambushOdds = scale(*ambushOdds, 260);
+		*combatOdds = scale(*combatOdds, 55);
+		*patrolOdds = scale(*patrolOdds, 20);
+		if (role == ROLE_SUPPORT || role == ROLE_MARKSMAN)
+		{
+			*ambushOdds = scale(*ambushOdds, 120);
+		}
+		break;
+	case PFS_ASSAULT:
+		*escapeOdds = scale(*escapeOdds, 70);
+		*ambushOdds = scale(*ambushOdds, 75);
+		*combatOdds = scale(*combatOdds, 160);
+		*patrolOdds = scale(*patrolOdds, 65);
+		if (role == ROLE_ASSAULT || role == ROLE_MELEE)
+		{
+			*combatOdds = scale(*combatOdds, 125);
+		}
+		if (role == ROLE_MARKSMAN || role == ROLE_HEAVY)
+		{
+			*combatOdds = scale(*combatOdds, 110);
+		}
+		break;
+	case PFS_SURVIVE:
+		*escapeOdds = scale(*escapeOdds, 230);
+		*ambushOdds = scale(*ambushOdds, 145);
+		*combatOdds = scale(*combatOdds, 50);
+		*patrolOdds = 0;
+		if (role == ROLE_SUPPORT || role == ROLE_HEAVY)
+		{
+			*escapeOdds = scale(*escapeOdds, 120);
+		}
+		else if (role == ROLE_ASSAULT)
+		{
+			*ambushOdds = scale(*ambushOdds, 115);
+		}
+		break;
+	case PFS_RETREAT_REGROUP:
+		*escapeOdds = scale(*escapeOdds, 300);
+		*ambushOdds = scale(*ambushOdds, 75);
+		*combatOdds = scale(*combatOdds, 35);
+		*patrolOdds = 0;
+		if (role == ROLE_ASSAULT || role == ROLE_MELEE)
+		{
+			*ambushOdds = scale(*ambushOdds, 115);
+		}
+		break;
+	case PFS_HUNT_LAST_ENEMY:
+		*escapeOdds = scale(*escapeOdds, 60);
+		*ambushOdds = scale(*ambushOdds, 70);
+		*combatOdds = scale(*combatOdds, 155);
+		*patrolOdds = scale(*patrolOdds, 135);
+		if (role == ROLE_ASSAULT || role == ROLE_MELEE)
+		{
+			*patrolOdds = scale(*patrolOdds, 115);
+			*combatOdds = scale(*combatOdds, 115);
+		}
+		if (role == ROLE_MARKSMAN || role == ROLE_HEAVY)
+		{
+			*patrolOdds = scale(*patrolOdds, 75);
+			*ambushOdds = scale(*ambushOdds, 115);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
 int PlayerFactionAI::getPreferredEngagementRange(BattleItem *weapon) const
 {
 	const PlayerAIRole role = getPlayerAIRole(weapon);
@@ -1324,11 +1493,13 @@ void PlayerFactionAI::think(BattleAction *action)
 	}
 	const int preferredRange = _unit->getFaction() == FACTION_PLAYER ? getPreferredEngagementRange(action->weapon) : 10;
 	const PlayerAIRole playerRole = _unit->getFaction() == FACTION_PLAYER ? getPlayerAIRole(action->weapon) : ROLE_ASSAULT;
+	const PlayerFactionStrategy factionStrategy = _unit->getFaction() == FACTION_PLAYER ? getFactionStrategy() : PFS_ASSAULT;
 	if (_unit->getFaction() == FACTION_PLAYER && Options::autoBattleLog)
 	{
 		std::ostringstream log;
 		log << "Player faction role: unit=" << _unit->getId()
-			<< ", role=" << (int)playerRole
+			<< ", role=" << getPlayerAIRoleName(playerRole)
+			<< ", strategy=" << getFactionStrategyName(factionStrategy)
 			<< ", weapon=" << (action->weapon ? action->weapon->getRules()->getType() : "none")
 			<< ", weaponScore=" << scoreWeaponForUnit(action->weapon)
 			<< ", preferredRange=" << preferredRange
@@ -1365,11 +1536,30 @@ void PlayerFactionAI::think(BattleAction *action)
 		setupEscape();
 	}
 
+	if (_unit->getFaction() == FACTION_PLAYER && !currentGrenadeDanger && !_escapeTUs
+		&& (factionStrategy == PFS_RETREAT_REGROUP
+			|| (factionStrategy == PFS_SURVIVE && _unit->getHealth() < _unit->getBaseStats()->health)))
+	{
+		setupEscape();
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction strategic escape setup: unit=" << _unit->getId()
+				<< ", strategy=" << getFactionStrategyName(factionStrategy)
+				<< ", escapeTarget=" << _escapeAction.target
+				<< ", escapeType=" << (int)_escapeAction.type
+				<< ", escapeTUs=" << _escapeTUs
+				<< ", health=" << _unit->getHealth()
+				<< ", maxHealth=" << _unit->getBaseStats()->health
+				<< ", spotting=" << _spottingEnemies;
+			_save->appendToAutoBattleLog(log.str());
+		}
+	}
+
 	if (_knownEnemies && !_melee && !_ambushTUs)
 	{
 		setupAmbush();
 	}
-
 	setupAttack();
 	if (_unit->getFaction() == FACTION_PLAYER
 		&& action->number == 2
@@ -1466,6 +1656,7 @@ void PlayerFactionAI::think(BattleAction *action)
 			const bool insideDangerRoom = riskyRoom && unitRoomId == contactRoom->id;
 			const bool openAreaFight = !contactRoom || contactRoom->isOutside || contactRoom->isHall || brokenRoom;
 			const bool huntingHiddenContact = !visibleFactionContact && !_visibleEnemies;
+			const bool initialDeploy = factionStrategy == PFS_INITIAL_DEPLOY;
 			int activeAllies = 0;
 			int activeHostiles = 0;
 			for (auto *other : *_save->getUnits())
@@ -1617,9 +1808,13 @@ void PlayerFactionAI::think(BattleAction *action)
 			{
 				desiredOpenDist = std::min(desiredOpenDist, enemiesInRoom > 1 ? 5 : 4);
 			}
-			const int maxSupportMoveDistance = endgameHiddenHunt ? (openAreaFight ? 8 : 6) : (huntingHiddenContact ? 4 : (openAreaFight && visibleFactionContact ? 4 : (openAreaFight ? 8 : 6)));
-			const int reserveMoveTU = endgameHiddenHunt ? 12 : (huntingHiddenContact ? (openAreaFight ? 24 : 20) : (openAreaFight && visibleFactionContact ? 24 : (hasRangedWeapon ? 20 : 12)));
+			const int maxSupportMoveDistance = initialDeploy ? 4 : (endgameHiddenHunt ? (openAreaFight ? 8 : 6) : (huntingHiddenContact ? 4 : (openAreaFight && visibleFactionContact ? 4 : (openAreaFight ? 8 : 6))));
+			const int reserveMoveTU = initialDeploy ? 28 : (endgameHiddenHunt ? 12 : (huntingHiddenContact ? (openAreaFight ? 24 : 20) : (openAreaFight && visibleFactionContact ? 24 : (hasRangedWeapon ? 20 : 12))));
 			int minOpenDistance = huntingHiddenContact ? (endgameHiddenHunt ? 5 : 2) : std::max(3, desiredOpenDist - (playerRole == ROLE_ASSAULT ? 4 : 5));
+			if (initialDeploy)
+			{
+				minOpenDistance = std::max(minOpenDistance, hasRangedWeapon ? 5 : 3);
+			}
 			if (huntingHiddenContact && playerRole == ROLE_MARKSMAN)
 			{
 				minOpenDistance = std::max(minOpenDistance, 8);
@@ -1657,7 +1852,7 @@ void PlayerFactionAI::think(BattleAction *action)
 				{
 					continue;
 				}
-				if (openAreaFight && tooCloseToAlly(pos))
+				if ((openAreaFight || initialDeploy) && tooCloseToAlly(pos))
 				{
 					continue;
 				}
@@ -1727,6 +1922,7 @@ void PlayerFactionAI::think(BattleAction *action)
 				_patrolAction.weapon = action->weapon;
 				_patrolAction.target = bestPos;
 				_patrolAction.type = BA_WALK;
+				_patrolAction.finalFacing = _save->getTileEngine()->getDirectionTo(bestPos, contactPos);
 				_attackAction = _patrolAction;
 				_AIMode = AI_COMBAT;
 				_factionSupportMoveAction = true;
@@ -1749,6 +1945,7 @@ void PlayerFactionAI::think(BattleAction *action)
 						<< ", openAreaFight=" << openAreaFight
 						<< ", visibleFactionContact=" << visibleFactionContact
 						<< ", huntingHiddenContact=" << huntingHiddenContact
+						<< ", initialDeploy=" << initialDeploy
 						<< ", endgameHiddenHunt=" << endgameHiddenHunt
 						<< ", activeAllies=" << activeAllies
 						<< ", activeHostiles=" << activeHostiles
@@ -1985,6 +2182,7 @@ factionRoomTacticsDone:
 	}
 
 	if (_unit->getFaction() == FACTION_PLAYER && !evacuatingGrenadeDanger && action->type == BA_WALK
+		&& getFactionStrategy() != PFS_HUNT_LAST_ENEMY
 		&& !_visibleEnemies && !_spottingEnemies && movementOscillation >= (_knownEnemies ? 2 : 4))
 	{
 		if (Options::autoBattleLog)
@@ -4281,6 +4479,36 @@ void PlayerFactionAI::evaluateAIMode()
 		combatOdds = 0;
 		ambushOdds = 0;
 	}
+	if (_unit->getFaction() == FACTION_PLAYER && _factionAI)
+	{
+		BattleItem *roleWeapon = _unit->getMainHandWeapon(false);
+		if (!roleWeapon)
+		{
+			roleWeapon = selectBestCarriedWeapon();
+		}
+		const PlayerAIRole role = getPlayerAIRole(roleWeapon);
+		const PlayerFactionStrategy strategy = getFactionStrategy();
+		const int beforeEscape = escapeOdds;
+		const int beforeAmbush = ambushOdds;
+		const int beforeCombat = combatOdds;
+		const int beforePatrol = patrolOdds;
+		applyFactionStrategyToModeOdds(strategy, role, &escapeOdds, &ambushOdds, &combatOdds, &patrolOdds);
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction mode odds: unit=" << _unit->getId()
+				<< ", strategy=" << getFactionStrategyName(strategy)
+				<< ", role=" << getPlayerAIRoleName(role)
+				<< ", escape=" << beforeEscape << "->" << escapeOdds
+				<< ", ambush=" << beforeAmbush << "->" << ambushOdds
+				<< ", combat=" << beforeCombat << "->" << combatOdds
+				<< ", patrol=" << beforePatrol << "->" << patrolOdds
+				<< ", visible=" << _visibleEnemies
+				<< ", known=" << _knownEnemies
+				<< ", spotting=" << _spottingEnemies;
+			_save->appendToAutoBattleLog(log.str());
+		}
+	}
 	// generate a random number to represent our decision.
 	int decision = RNG::generate(1, std::max(1, patrolOdds + ambushOdds + escapeOdds + combatOdds));
 
@@ -4305,6 +4533,43 @@ void PlayerFactionAI::evaluateAIMode()
 	else
 	{
 		_AIMode = AI_ESCAPE;
+	}
+
+	if (_unit->getFaction() == FACTION_PLAYER && _factionAI)
+	{
+		const PlayerFactionStrategy strategy = getFactionStrategy();
+		const bool badlyWounded = _unit->getHealth() < std::max(1, _unit->getBaseStats()->health / 2);
+		const bool usefulAttack = _attackAction.type != BA_RETHINK;
+		if ((strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP) && _escapeTUs && (_spottingEnemies || badlyWounded || !usefulAttack))
+		{
+			_AIMode = AI_ESCAPE;
+		}
+		else if ((strategy == PFS_DEFEND_LINE || strategy == PFS_SIEGE_ROOM || strategy == PFS_HOLD_REACTION) && _ambushTUs && !_visibleEnemies)
+		{
+			_AIMode = AI_AMBUSH;
+		}
+		else if (strategy == PFS_ASSAULT && usefulAttack && _visibleEnemies)
+		{
+			_AIMode = AI_COMBAT;
+		}
+		else if (strategy == PFS_HUNT_LAST_ENEMY && !_visibleEnemies && _AIMode == AI_ESCAPE && !badlyWounded && !_spottingEnemies)
+		{
+			_AIMode = _toNode || _foundBaseModuleToDestroy ? AI_PATROL : AI_AMBUSH;
+		}
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction mode selected: unit=" << _unit->getId()
+				<< ", strategy=" << getFactionStrategyName(strategy)
+				<< ", mode=" << _AIMode
+				<< ", attack=" << (int)_attackAction.type
+				<< ", ambushTUs=" << _ambushTUs
+				<< ", escapeTUs=" << _escapeTUs
+				<< ", visible=" << _visibleEnemies
+				<< ", spotting=" << _spottingEnemies
+				<< ", wounded=" << badlyWounded;
+			_save->appendToAutoBattleLog(log.str());
+		}
 	}
 
 	// if the aliens are cheating, or the unit is charging, enforce combat as a priority.
@@ -4571,6 +4836,11 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 			continue;
 		}
 		const int dist = Position::distance2d(pos, target->getPosition());
+		const int moveDistance = Position::distance2d(pos, _unit->getPosition());
+		if (!targetVisible && getFactionStrategy() == PFS_HUNT_LAST_ENEMY && currentDist > 25 && moveDistance <= 1 && currentDist - dist <= 0)
+		{
+			continue;
+		}
 		if (!meleeRole && dist < std::max(3, preferredRange - 5))
 		{
 			continue;

@@ -18,7 +18,6 @@
  * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "../Savegame/BattleUnit.h"
-#include <map>
 #include <string>
 #include <vector>
 
@@ -26,8 +25,10 @@ namespace OpenXcom
 {
 
 class AIModule;
+class PlayerFactionPlanner;
 class SavedBattleGame;
 struct BattleAction;
+enum PlayerFactionStrategy : int;
 
 struct BattleRoomInfo
 {
@@ -42,34 +43,6 @@ struct BattleRoomInfo
 	std::vector<Position> entryPositions;
 };
 
-struct PlayerFactionEnemyContact
-{
-	BattleUnit *enemy;
-	std::vector<BattleUnit*> visibleBy;
-	std::vector<BattleUnit*> canShootBy;
-	int threatScore;
-	int focusScore;
-	int roomId;
-	int roomSize;
-	int roomDoors;
-	int roomWindows;
-	int roomOpenings;
-	bool roomOutside;
-	bool roomHall;
-	int enemiesInRoom;
-	bool visibleContact;
-};
-
-struct PlayerFactionPlan
-{
-	int turn;
-	int cycle;
-	std::vector<BattleUnit*> allies;
-	std::vector<PlayerFactionEnemyContact> enemies;
-	std::map<int, BattleUnit*> assignedTargetByUnitId;
-	std::map<int, std::string> assignmentReasonByUnitId;
-};
-
 /**
  * Faction-level AI coordinator.
  *
@@ -81,23 +54,18 @@ class FactionAI
 private:
 	SavedBattleGame *_save;
 	UnitFaction _faction;
-	mutable PlayerFactionPlan _playerPlan;
+	mutable PlayerFactionPlanner *_playerPlanner;
 	mutable unsigned long long _roomCacheSignature;
 	mutable std::vector<int> _roomIdByTile;
 	mutable std::vector<BattleRoomInfo> _roomInfos;
 
-	void buildPlayerPlan(BattleUnit *activeUnit) const;
+	PlayerFactionPlanner *getPlayerPlanner() const;
 	unsigned long long calculateRoomCacheSignature() const;
 	void ensureRoomCache() const;
 	void rebuildRoomCache(unsigned long long signature) const;
 	void writeBattleMapLog() const;
 	int getRoomId(Position pos) const;
 	const BattleRoomInfo *getRoomInfo(int roomId) const;
-	bool canSeeEnemy(BattleUnit *actor, BattleUnit *enemy) const;
-	bool canShootEnemy(BattleUnit *actor, BattleUnit *enemy) const;
-	int scoreEnemyThreat(BattleUnit *enemy) const;
-	int scoreAssignment(BattleUnit *actor, const PlayerFactionEnemyContact &contact, int assignedCount) const;
-	void logPlayerPlan() const;
 
 public:
 	FactionAI(SavedBattleGame *save, UnitFaction faction);
@@ -106,6 +74,8 @@ public:
 	void setWeaponPickedUp(BattleUnit *unit) const;
 	BattleUnit *getAssignedTarget(BattleUnit *unit) const;
 	std::string getAssignmentReason(BattleUnit *unit) const;
+	PlayerFactionStrategy getPlayerStrategy() const;
+	const char *getPlayerStrategyName() const;
 	int getEnemyContactCount() const;
 	bool getBestEnemyContactPosition(Position *position) const;
 	bool getBestEnemyContactPosition(Position *position, const BattleRoomInfo **roomInfo, int *enemiesInRoom, bool *visibleContact = 0) const;

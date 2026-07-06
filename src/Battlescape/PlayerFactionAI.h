@@ -34,6 +34,7 @@ struct BattleRoomInfo;
 struct BattleAction;
 class BattlescapeState;
 class Node;
+enum PlayerFactionStrategy : int;
 
 /**
  * This class is used by the BattleUnit AI.
@@ -79,6 +80,10 @@ private:
 	bool setupFactionStalkAmbush(const Position &contactPos, const BattleRoomInfo *contactRoom, int enemiesInRoom, BattleItem *weapon);
 	bool setupProximityMineAmbush();
 	PlayerAIRole getPlayerAIRole(BattleItem *weapon) const;
+	const char *getPlayerAIRoleName(PlayerAIRole role) const;
+	PlayerFactionStrategy getFactionStrategy() const;
+	const char *getFactionStrategyName(PlayerFactionStrategy strategy) const;
+	void applyFactionStrategyToModeOdds(PlayerFactionStrategy strategy, PlayerAIRole role, int *escapeOdds, int *ambushOdds, int *combatOdds, int *patrolOdds) const;
 	int getPreferredEngagementRange(BattleItem *weapon) const;
 	int scoreWeaponForUnit(BattleItem *weapon) const;
 	BattleItem *selectBestCarriedWeapon() const;

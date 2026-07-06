@@ -42,6 +42,8 @@ The main limitation: there is no shared player-side plan. Every unit independent
 
 ## Proposed Architecture
 
+Detailed global-mode behavior is tracked separately in `docs/player-faction-global-modes.md`. That document defines the player-side modes such as `Initial Deploy`, `Defend Line`, `Siege Room`, `Hold Reaction`, `Assault`, `Survive`, `Retreat Regroup`, and `Hunt Last Enemy`, including role behavior and dynamic switching rules.
+
 ### Faction-Level Plan
 
 Add a persistent player plan to `FactionAI`.

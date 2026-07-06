@@ -117,6 +117,7 @@ set ( battlescape_src
   Battlescape/PathfindingNode.cpp
   Battlescape/PathfindingOpenSet.cpp
   Battlescape/PlayerFactionAI.cpp
+  Battlescape/PlayerFactionPlanner.cpp
   Battlescape/Position.cpp
   Battlescape/PrimeGrenadeState.cpp
   Battlescape/Projectile.cpp

@@ -1,0 +1,583 @@
+/*
+ * Copyright 2010-2016 OpenXcom Developers.
+ *
+ * This file is part of OpenXcom.
+ *
+ * OpenXcom is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * OpenXcom is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with OpenXcom.  If not, see <http://www.gnu.org/licenses/>.
+ */
+#include "PlayerFactionPlanner.h"
+#include "TileEngine.h"
+#include "../Engine/Options.h"
+#include "../Mod/RuleItem.h"
+#include "../Savegame/BattleItem.h"
+#include "../Savegame/SavedBattleGame.h"
+#include "../Savegame/Tile.h"
+#include <algorithm>
+#include <sstream>
+
+namespace OpenXcom
+{
+
+namespace
+{
+
+bool playerAIRoomActsOpen(const BattleRoomInfo &room)
+{
+	return room.isOutside
+		|| room.isHall
+		|| room.tileCount > 60
+		|| room.openingCount > room.tileCount * 2
+		|| (room.entryPositions.empty() && room.doorCount + room.windowCount == 0);
+}
+
+}
+
+PlayerFactionPlanner::PlayerFactionPlanner(SavedBattleGame *save, const FactionAI *factionAI) :
+	_save(save), _factionAI(factionAI)
+{
+	_plan.turn = -1;
+	_plan.cycle = 0;
+	_plan.strategy = PFS_HOLD_REACTION;
+	_plan.activeHostiles = 0;
+	_plan.visibleContacts = 0;
+	_plan.hiddenContacts = 0;
+	_plan.openAreaContacts = 0;
+	_plan.roomContacts = 0;
+	_plan.woundedAllies = 0;
+	_plan.exposedAllies = 0;
+}
+
+const char *PlayerFactionPlanner::getStrategyName() const
+{
+	switch (_plan.strategy)
+	{
+	case PFS_INITIAL_DEPLOY:
+		return "initial_deploy";
+	case PFS_DEFEND_LINE:
+		return "defend_line";
+	case PFS_SIEGE_ROOM:
+		return "siege_room";
+	case PFS_HUNT_LAST_ENEMY:
+		return "hunt_last_enemy";
+	case PFS_SURVIVE:
+		return "survive";
+	case PFS_RETREAT_REGROUP:
+		return "retreat_regroup";
+	case PFS_ASSAULT:
+		return "assault";
+	case PFS_HOLD_REACTION:
+	default:
+		return "hold_reaction";
+	}
+}
+
+BattleUnit *PlayerFactionPlanner::getAssignedTarget(BattleUnit *unit) const
+{
+	if (!unit)
+	{
+		return 0;
+	}
+	auto it = _plan.assignedTargetByUnitId.find(unit->getId());
+	if (it == _plan.assignedTargetByUnitId.end())
+	{
+		return 0;
+	}
+	return it->second;
+}
+
+std::string PlayerFactionPlanner::getAssignmentReason(BattleUnit *unit) const
+{
+	if (!unit)
+	{
+		return std::string();
+	}
+	auto it = _plan.assignmentReasonByUnitId.find(unit->getId());
+	if (it == _plan.assignmentReasonByUnitId.end())
+	{
+		return std::string();
+	}
+	return it->second;
+}
+
+bool PlayerFactionPlanner::getBestEnemyContactPosition(Position *position) const
+{
+	return getBestEnemyContactPosition(position, 0, 0);
+}
+
+bool PlayerFactionPlanner::getBestEnemyContactPosition(Position *position, const BattleRoomInfo **roomInfo, int *enemiesInRoom, bool *visibleContact) const
+{
+	if (!position || _plan.enemies.empty())
+	{
+		return false;
+	}
+	const PlayerFactionEnemyContact *bestContact = 0;
+	int bestScore = -100000;
+	for (const auto &contact : _plan.enemies)
+	{
+		const int score = contact.threatScore + contact.focusScore;
+		if (score > bestScore)
+		{
+			bestScore = score;
+			bestContact = &contact;
+		}
+	}
+	if (!bestContact || !bestContact->enemy)
+	{
+		return false;
+	}
+	*position = bestContact->enemy->getPosition();
+	if (roomInfo)
+	{
+		*roomInfo = _factionAI->getRoomInfoAt(bestContact->enemy->getPosition());
+	}
+	if (enemiesInRoom)
+	{
+		*enemiesInRoom = bestContact->enemiesInRoom;
+	}
+	if (visibleContact)
+	{
+		*visibleContact = bestContact->visibleContact;
+	}
+	return true;
+}
+
+bool PlayerFactionPlanner::canSeeEnemy(BattleUnit *actor, BattleUnit *enemy) const
+{
+	return actor && enemy && enemy->getTile() && _save->getTileEngine()->visible(actor, enemy->getTile());
+}
+
+bool PlayerFactionPlanner::canShootEnemy(BattleUnit *actor, BattleUnit *enemy) const
+{
+	if (!actor || !enemy || !enemy->getTile())
+	{
+		return false;
+	}
+	BattleItem *weapon = actor->getMainHandWeapon(false);
+	if (!weapon || !_save->canUseWeapon(weapon, actor, false, BA_NONE))
+	{
+		return false;
+	}
+	BattleAction action;
+	action.actor = actor;
+	action.weapon = weapon;
+	action.target = enemy->getPosition();
+	Position origin = _save->getTileEngine()->getOriginVoxel(action, 0);
+	Position target;
+	return _save->getTileEngine()->canTargetUnit(&origin, enemy->getTile(), &target, actor, false, enemy);
+}
+
+int PlayerFactionPlanner::scoreEnemyThreat(BattleUnit *enemy) const
+{
+	if (!enemy)
+	{
+		return 0;
+	}
+	int score = 40;
+	score += std::max(0, enemy->getHealth());
+	score += std::max(0, enemy->getTimeUnits()) / 2;
+	if (enemy->getMainHandWeapon(false))
+	{
+		score += 35;
+	}
+	if (enemy->getUtilityWeapon(BT_MELEE))
+	{
+		score += 20;
+	}
+	return score;
+}
+
+int PlayerFactionPlanner::scoreAssignment(BattleUnit *actor, const PlayerFactionEnemyContact &contact, int assignedCount) const
+{
+	if (!actor || !contact.enemy)
+	{
+		return -100000;
+	}
+	const int distance = Position::distance2d(actor->getPosition(), contact.enemy->getPosition());
+	int score = contact.threatScore + contact.focusScore;
+	score -= distance * 3;
+	BattleItem *weapon = actor->getMainHandWeapon(false);
+	if (weapon && weapon->getRules())
+	{
+		const RuleItem *rule = weapon->getRules();
+		const UnitStats *stats = actor->getBaseStats();
+		const int bestAccuracy = std::max(std::max(rule->getAccuracySnap(), rule->getAccuracyAimed()), rule->getAccuracyAuto());
+		const int expectedPressure = std::max(0, rule->getPower()) + bestAccuracy * std::max(30, (int)stats->firing) / 100;
+		score += expectedPressure / 2;
+		if (rule->getBattleType() == BT_MELEE)
+		{
+			score += distance <= 3 ? 45 : -60;
+		}
+	}
+	if (std::find(contact.canShootBy.begin(), contact.canShootBy.end(), actor) != contact.canShootBy.end())
+	{
+		score += 150;
+	}
+	else if (std::find(contact.visibleBy.begin(), contact.visibleBy.end(), actor) != contact.visibleBy.end())
+	{
+		score += 30;
+	}
+	else
+	{
+		score -= 80;
+	}
+	const bool wounded = contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= 35;
+	score += wounded ? 65 : 0;
+	score -= assignedCount * (wounded ? 25 : 35);
+	return score;
+}
+
+void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
+{
+	_plan.turn = _save->getTurn();
+	_plan.cycle++;
+	_plan.allies.clear();
+	_plan.enemies.clear();
+	_plan.assignedTargetByUnitId.clear();
+	_plan.assignmentReasonByUnitId.clear();
+	_plan.activeHostiles = 0;
+	_plan.visibleContacts = 0;
+	_plan.hiddenContacts = 0;
+	_plan.openAreaContacts = 0;
+	_plan.roomContacts = 0;
+	_plan.woundedAllies = 0;
+	_plan.exposedAllies = 0;
+
+	for (auto* unit : *_save->getUnits())
+	{
+		if (!unit || unit->isOut())
+		{
+			continue;
+		}
+		if (unit->getFaction() == FACTION_PLAYER)
+		{
+			_plan.allies.push_back(unit);
+			if (unit->getHealth() < unit->getBaseStats()->health)
+			{
+				++_plan.woundedAllies;
+			}
+		}
+	}
+
+	std::vector<PlayerFactionEnemyContact> hiddenContacts;
+	for (auto* enemy : *_save->getUnits())
+	{
+		if (!enemy || enemy->isOut() || enemy->getFaction() != FACTION_HOSTILE)
+		{
+			continue;
+		}
+		++_plan.activeHostiles;
+		PlayerFactionEnemyContact contact;
+		contact.enemy = enemy;
+		contact.threatScore = scoreEnemyThreat(enemy);
+		contact.focusScore = 0;
+		contact.roomId = _factionAI->getRoomIdAt(enemy->getPosition());
+		contact.roomSize = 0;
+		contact.roomDoors = 0;
+		contact.roomWindows = 0;
+		contact.roomOpenings = 0;
+		contact.roomEntries = 0;
+		contact.roomOutside = false;
+		contact.roomHall = false;
+		contact.enemiesInRoom = 1;
+		contact.visibleContact = false;
+		if (const BattleRoomInfo *room = _factionAI->getRoomInfoAt(enemy->getPosition()))
+		{
+			contact.roomSize = room->tileCount;
+			contact.roomDoors = room->doorCount;
+			contact.roomWindows = room->windowCount;
+			contact.roomOpenings = room->openingCount;
+			contact.roomEntries = (int)room->entryPositions.size();
+			contact.roomOutside = room->isOutside;
+			contact.roomHall = room->isHall || (!room->isOutside && playerAIRoomActsOpen(*room));
+		}
+		for (auto* ally : _plan.allies)
+		{
+			if (canSeeEnemy(ally, enemy))
+			{
+				contact.visibleBy.push_back(ally);
+				if (canShootEnemy(ally, enemy))
+				{
+					contact.canShootBy.push_back(ally);
+				}
+			}
+		}
+		contact.visibleContact = !contact.visibleBy.empty();
+		if (contact.visibleContact)
+		{
+			++_plan.visibleContacts;
+			contact.focusScore = 20 * (int)contact.visibleBy.size() + 35 * (int)contact.canShootBy.size();
+			_plan.enemies.push_back(contact);
+		}
+		else
+		{
+			++_plan.hiddenContacts;
+			int nearestAllyDist = 100000;
+			for (auto *ally : _plan.allies)
+			{
+				nearestAllyDist = std::min(nearestAllyDist, Position::distance2d(ally->getPosition(), enemy->getPosition()));
+			}
+			contact.focusScore = -90 - nearestAllyDist * 2;
+			contact.threatScore = contact.threatScore * 2 / 3;
+			hiddenContacts.push_back(contact);
+		}
+	}
+	if (_plan.enemies.empty() && !hiddenContacts.empty())
+	{
+		std::sort(hiddenContacts.begin(), hiddenContacts.end(), [](const PlayerFactionEnemyContact &a, const PlayerFactionEnemyContact &b)
+		{
+			return a.threatScore + a.focusScore > b.threatScore + b.focusScore;
+		});
+		const int hiddenLimit = std::min(1, (int)hiddenContacts.size());
+		for (int i = 0; i < hiddenLimit; ++i)
+		{
+			_plan.enemies.push_back(hiddenContacts[i]);
+		}
+	}
+
+	std::map<int, int> enemiesByRoom;
+	for (const auto &contact : _plan.enemies)
+	{
+		enemiesByRoom[contact.roomId]++;
+	}
+	for (auto &contact : _plan.enemies)
+	{
+		contact.enemiesInRoom = enemiesByRoom[contact.roomId];
+		if (!contact.roomOutside && !contact.roomHall)
+		{
+			++_plan.roomContacts;
+			contact.threatScore += 20 + std::max(0, contact.enemiesInRoom - 1) * 45;
+			if (contact.roomDoors + contact.roomWindows <= 2)
+			{
+				contact.threatScore += 20;
+			}
+		}
+		else if (contact.roomHall)
+		{
+			++_plan.openAreaContacts;
+			contact.threatScore += std::max(0, contact.enemiesInRoom - 1) * 20;
+		}
+		else
+		{
+			++_plan.openAreaContacts;
+		}
+	}
+
+	for (auto *ally : _plan.allies)
+	{
+		for (auto *enemy : *_save->getUnits())
+		{
+			if (!enemy || enemy->isOut() || enemy->getFaction() != FACTION_HOSTILE)
+			{
+				continue;
+			}
+			if (canSeeEnemy(enemy, ally))
+			{
+				++_plan.exposedAllies;
+				break;
+			}
+		}
+	}
+
+	const int activeAllies = (int)_plan.allies.size();
+	const bool mostlyHidden = _plan.visibleContacts == 0 && _plan.hiddenContacts > 0;
+	const bool manyEnemies = _plan.activeHostiles >= std::max(5, activeAllies / 2);
+	const bool outnumbered = activeAllies > 0 && _plan.activeHostiles >= activeAllies + 2;
+	const bool openContacts = _plan.openAreaContacts > 0 || (_plan.enemies.empty() && _plan.hiddenContacts > 0);
+	const bool roomProblem = _plan.roomContacts > 0 && _plan.openAreaContacts == 0;
+	const bool squadBadlyExposed = _plan.exposedAllies >= std::max(2, activeAllies / 3);
+	const bool squadWoundedUnderContact = _plan.woundedAllies > 0 && _plan.exposedAllies > 0;
+	const bool lastEnemies = _plan.activeHostiles <= 2;
+	const bool lateHunt = _save->getTurn() >= 50 && activeAllies > 0 && _plan.activeHostiles <= std::max(3, activeAllies + 1);
+	const bool enableInitialDeployMode = false;
+	if (enableInitialDeployMode
+		&& _save->getTurn() <= 2
+		&& activeAllies >= 5
+		&& _plan.activeHostiles > 2
+		&& _plan.activeHostiles <= activeAllies / 2 + 1
+		&& _plan.visibleContacts >= 2
+		&& _plan.hiddenContacts > 0
+		&& _plan.exposedAllies >= std::max(2, activeAllies / 4))
+	{
+		_plan.strategy = PFS_INITIAL_DEPLOY;
+	}
+	else if (lastEnemies || lateHunt)
+	{
+		_plan.strategy = PFS_HUNT_LAST_ENEMY;
+	}
+	else if (squadBadlyExposed && (outnumbered || squadWoundedUnderContact) && _plan.visibleContacts <= 2)
+	{
+		_plan.strategy = PFS_RETREAT_REGROUP;
+	}
+	else if (activeAllies <= 3 || outnumbered)
+	{
+		_plan.strategy = PFS_SURVIVE;
+	}
+	else if (mostlyHidden && manyEnemies && openContacts)
+	{
+		_plan.strategy = PFS_DEFEND_LINE;
+	}
+	else if (roomProblem && _plan.visibleContacts == 0)
+	{
+		_plan.strategy = PFS_SIEGE_ROOM;
+	}
+	else if (_plan.visibleContacts > 0 && _plan.visibleContacts <= 2 && _plan.activeHostiles > 6)
+	{
+		_plan.strategy = PFS_HOLD_REACTION;
+	}
+	else if (_plan.visibleContacts > 0)
+	{
+		_plan.strategy = PFS_ASSAULT;
+	}
+	else
+	{
+		_plan.strategy = PFS_HOLD_REACTION;
+	}
+
+	std::map<int, int> assignedCountByEnemyId;
+	for (auto* ally : _plan.allies)
+	{
+		PlayerFactionEnemyContact *bestContact = 0;
+		int bestScore = -100000;
+		for (auto &contact : _plan.enemies)
+		{
+			const bool canShoot = std::find(contact.canShootBy.begin(), contact.canShootBy.end(), ally) != contact.canShootBy.end();
+			const bool canSee = std::find(contact.visibleBy.begin(), contact.visibleBy.end(), ally) != contact.visibleBy.end();
+			if (!canShoot && !canSee)
+			{
+				if (contact.visibleContact)
+				{
+					continue;
+				}
+			}
+			const int assignedCount = assignedCountByEnemyId[contact.enemy->getId()];
+			int maxAssignees = contact.visibleContact
+				? std::max(3, (int)contact.canShootBy.size() + std::max(0, (int)contact.visibleBy.size() - (int)contact.canShootBy.size()) / 2)
+				: ((_plan.enemies.size() == 1 || _save->getTurn() >= 16)
+					? (int)_plan.allies.size()
+					: std::min((int)_plan.allies.size(), (contact.canShootBy.empty() && contact.visibleBy.empty()) ? 3 : 5));
+			if (!contact.visibleContact && (_plan.strategy == PFS_DEFEND_LINE || _plan.strategy == PFS_HOLD_REACTION || _plan.strategy == PFS_SURVIVE))
+			{
+				maxAssignees = std::min(maxAssignees, _plan.strategy == PFS_SURVIVE ? 2 : 4);
+			}
+			else if (!contact.visibleContact && _plan.strategy == PFS_SIEGE_ROOM)
+			{
+				maxAssignees = std::min(maxAssignees, 5);
+			}
+			if (contact.visibleContact && (contact.threatScore >= 130 || contact.canShootBy.size() >= 2))
+			{
+				maxAssignees = std::max(maxAssignees, 5);
+			}
+			if (contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= 35)
+			{
+				maxAssignees = std::max(maxAssignees, 6);
+			}
+			if (assignedCount >= maxAssignees && !canShoot)
+			{
+				continue;
+			}
+			const int score = scoreAssignment(ally, contact, assignedCount);
+			if (score > bestScore)
+			{
+				bestScore = score;
+				bestContact = &contact;
+			}
+		}
+		if (bestContact)
+		{
+			_plan.assignedTargetByUnitId[ally->getId()] = bestContact->enemy;
+			assignedCountByEnemyId[bestContact->enemy->getId()]++;
+			std::ostringstream reason;
+			reason << "score=" << bestScore
+				<< ", threat=" << bestContact->threatScore
+				<< ", focus=" << bestContact->focusScore
+				<< ", room=" << bestContact->roomId
+				<< ", roomEnemies=" << bestContact->enemiesInRoom
+				<< ", roomSize=" << bestContact->roomSize
+				<< ", doors=" << bestContact->roomDoors
+				<< ", windows=" << bestContact->roomWindows
+				<< ", entries=" << bestContact->roomEntries
+				<< ", outside=" << bestContact->roomOutside
+				<< ", hall=" << bestContact->roomHall
+				<< ", visibleBy=" << bestContact->visibleBy.size()
+				<< ", canShootBy=" << bestContact->canShootBy.size()
+				<< ", visibleContact=" << bestContact->visibleContact
+				<< ", assignedCount=" << assignedCountByEnemyId[bestContact->enemy->getId()];
+			_plan.assignmentReasonByUnitId[ally->getId()] = reason.str();
+		}
+	}
+
+	if (activeUnit)
+	{
+		logPlan();
+	}
+}
+
+void PlayerFactionPlanner::logPlan() const
+{
+	std::ostringstream summary;
+	summary << "Player faction plan: turn=" << _plan.turn
+		<< ", cycle=" << _plan.cycle
+		<< ", strategy=" << getStrategyName()
+		<< ", allies=" << _plan.allies.size()
+		<< ", activeHostiles=" << _plan.activeHostiles
+		<< ", planEnemies=" << _plan.enemies.size()
+		<< ", visibleContacts=" << _plan.visibleContacts
+		<< ", hiddenContacts=" << _plan.hiddenContacts
+		<< ", openContacts=" << _plan.openAreaContacts
+		<< ", roomContacts=" << _plan.roomContacts
+		<< ", woundedAllies=" << _plan.woundedAllies
+		<< ", exposedAllies=" << _plan.exposedAllies;
+	_save->appendToAutoBattleLog(summary.str());
+
+	for (const auto &contact : _plan.enemies)
+	{
+		std::ostringstream line;
+		line << "Player enemy contact: enemy=" << contact.enemy->getId()
+			<< ", pos=" << contact.enemy->getPosition()
+			<< ", threat=" << contact.threatScore
+			<< ", focus=" << contact.focusScore
+			<< ", room=" << contact.roomId
+			<< ", roomEnemies=" << contact.enemiesInRoom
+			<< ", roomSize=" << contact.roomSize
+			<< ", doors=" << contact.roomDoors
+			<< ", windows=" << contact.roomWindows
+			<< ", openings=" << contact.roomOpenings
+			<< ", entries=" << contact.roomEntries
+			<< ", outside=" << contact.roomOutside
+			<< ", hall=" << contact.roomHall
+			<< ", visibleContact=" << contact.visibleContact
+			<< ", visibleBy=" << contact.visibleBy.size()
+			<< ", canShootBy=" << contact.canShootBy.size();
+		_save->appendToAutoBattleLog(line.str());
+	}
+	for (auto* ally : _plan.allies)
+	{
+		BattleUnit *target = getAssignedTarget(ally);
+		std::ostringstream line;
+		line << "Player unit assignment: unit=" << ally->getId();
+		if (target)
+		{
+			line << ", target=" << target->getId()
+				<< ", targetPos=" << target->getPosition()
+				<< ", reason=" << getAssignmentReason(ally);
+		}
+		else
+		{
+			line << ", target=none";
+		}
+		_save->appendToAutoBattleLog(line.str());
+	}
+}
+
+}
