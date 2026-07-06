@@ -62,6 +62,8 @@ private:
 	Node *_fromNode, *_toNode;
 	bool _foundBaseModuleToDestroy;
 	bool _stalkAmbushAction;
+	bool _cleanShotMoveAction;
+	bool _fallbackCoverAction;
 	std::vector<int> _reachable, _reachableWithAttack, _wasHitBy;
 	BattleActionType _reserve;
 	UnitFaction _targetFaction;
@@ -127,6 +129,8 @@ public:
 	int countKnownTargets() const;
 	/// count how many known XCom units are able to see this unit.
 	int getSpottingUnits(const Position& pos) const;
+	int getEnemyFireExposure(const Position& pos) const;
+	int scoreTargetPriority(BattleUnit *target, bool assigned, bool visible, int distance) const;
 	/// Selects the nearest target we can see, and return the number of viable targets.
 	int selectNearestTarget();
 	/// Selects the closest known xcom unit for ambushing.
@@ -144,6 +148,7 @@ public:
 	/// Selects a suitable position from which to attack.
 	bool findFirePoint();
 	bool setupCleanShotMove(BattleUnit *target);
+	bool setupFallbackCoverMove();
 	/// Decides if we should throw a grenade/launch a missile to this position.
 	int explosiveEfficacy(Position targetPos, BattleUnit *attackingUnit, int radius, int diff, bool grenade = false) const;
 	bool explosiveProjectileRiskyForAllies(BattleAction *action, int radius, const Position *originPosition = 0, bool logRejection = true) const;

@@ -51,7 +51,7 @@ PlayerFactionAI::PlayerFactionAI(SavedBattleGame *save, BattleUnit *unit, Node *
 	AIModule(save, unit, node), _save(save), _unit(unit), _aggroTarget(0), _knownEnemies(0), _visibleEnemies(0), _spottingEnemies(0),
 	_escapeTUs(0), _ambushTUs(0), _weaponPickedUp(false), _rifle(false), _melee(false), _blaster(false), _grenade(false),
 	_didPsi(false), _AIMode(AI_PATROL), _closestDist(100), _fromNode(node), _toNode(0), _foundBaseModuleToDestroy(false),
-	_stalkAmbushAction(false), _factionAI(0)
+	_stalkAmbushAction(false), _cleanShotMoveAction(false), _fallbackCoverAction(false), _factionAI(0)
 {
 	_traceAI = Options::traceAI;
 
@@ -591,6 +591,7 @@ bool PlayerFactionAI::tryEquipGroundWeapon(BattleItem *item)
 	}
 
 	const RuleInventory *slot = 0;
+	BattleItem *replaced = 0;
 	if (!_unit->getItem(_save->getMod()->getInventoryRightHand()))
 	{
 		slot = _save->getMod()->getInventoryRightHand();
@@ -601,7 +602,20 @@ bool PlayerFactionAI::tryEquipGroundWeapon(BattleItem *item)
 	}
 	else
 	{
-		return false;
+		BattleItem *rightHand = _unit->getItem(_save->getMod()->getInventoryRightHand());
+		BattleItem *leftHand = _unit->getItem(_save->getMod()->getInventoryLeftHand());
+		const int rightScore = scoreWeaponForUnit(rightHand);
+		const int leftScore = scoreWeaponForUnit(leftHand);
+		if (rightScore <= leftScore)
+		{
+			slot = _save->getMod()->getInventoryRightHand();
+			replaced = rightHand;
+		}
+		else
+		{
+			slot = _save->getMod()->getInventoryLeftHand();
+			replaced = leftHand;
+		}
 	}
 
 	const int tuCost = item->getMoveToCost(slot);
@@ -609,8 +623,19 @@ bool PlayerFactionAI::tryEquipGroundWeapon(BattleItem *item)
 	{
 		return false;
 	}
+	Tile *itemTile = item->getTile();
+	if (replaced)
+	{
+		replaced->moveToOwner(0);
+		itemTile->addItem(replaced, _save->getMod()->getInventoryGround());
+	}
 	if (!_unit->fitItemToInventory(slot, item))
 	{
+		if (replaced)
+		{
+			itemTile->removeItem(replaced);
+			_unit->fitItemToInventory(slot, replaced);
+		}
 		return false;
 	}
 	_unit->spendTimeUnits(tuCost);
@@ -622,6 +647,7 @@ bool PlayerFactionAI::tryEquipGroundWeapon(BattleItem *item)
 			<< ", item=" << item->getRules()->getType()
 			<< ", itemScore=" << itemScore
 			<< ", previousScore=" << previousScore
+			<< ", replaced=" << (replaced ? replaced->getRules()->getType() : "none")
 			<< ", role=" << (int)getPlayerAIRole(item)
 			<< ", tuCost=" << tuCost
 			<< ", position=" << _unit->getPosition()
@@ -633,26 +659,31 @@ bool PlayerFactionAI::tryEquipGroundWeapon(BattleItem *item)
 
 bool PlayerFactionAI::setupRoleWeaponPickup(BattleAction *action)
 {
-	if (_unit->getFaction() != FACTION_PLAYER || _visibleEnemies || _spottingEnemies)
+	if (_unit->getFaction() != FACTION_PLAYER)
 	{
 		return false;
 	}
 
+	const bool underContact = _visibleEnemies || _spottingEnemies;
 	BattleItem *currentWeapon = selectBestCarriedWeapon();
 	const int currentScore = scoreWeaponForUnit(currentWeapon);
-	if (_knownEnemies && currentScore > -50000)
+	if (_knownEnemies && currentScore > -50000 && !underContact)
 	{
 		return false;
 	}
 	BattleItem *bestItem = 0;
 	Position bestPos;
-	const int requiredGain = _knownEnemies ? 160 : 70;
+	const int requiredGain = underContact ? 120 : (_knownEnemies ? 160 : 70);
 	int bestScore = currentScore + requiredGain;
 	int bestMoveDist = 100000;
 
 	auto considerTile = [&](Tile *tile)
 	{
 		if (!tile || tile->getDangerous() || (tile->getUnit() && tile->getUnit() != _unit) || getSpottingUnits(tile->getPosition()) > 0)
+		{
+			return;
+		}
+		if (underContact && tile->getPosition() != _unit->getPosition())
 		{
 			return;
 		}
@@ -735,6 +766,8 @@ void PlayerFactionAI::think(BattleAction *action)
 	action->type = BA_RETHINK;
 	action->actor = _unit;
 	action->weapon = _unit->getFaction() == FACTION_PLAYER ? selectBestCarriedWeapon() : _unit->getMainHandWeapon(false);
+	_cleanShotMoveAction = false;
+	_fallbackCoverAction = false;
 	_attackAction.diff = _save->getBattleState()->getGame()->getSavedGame()->getDifficultyCoefficient();
 	_attackAction.actor = _unit;
 	_attackAction.run = false;
@@ -857,13 +890,18 @@ void PlayerFactionAI::think(BattleAction *action)
 	{
 		setupRoleWeaponPickup(action);
 	}
+	if (_unit->getFaction() == FACTION_PLAYER && _attackAction.type == BA_RETHINK)
+	{
+		setupFallbackCoverMove();
+	}
 
-	if (_unit->getFaction() == FACTION_PLAYER && _factionAI && _knownEnemies)
+	if (_unit->getFaction() == FACTION_PLAYER && _factionAI && (_knownEnemies || _factionAI->getEnemyContactCount() > 0))
 	{
 		Position contactPos;
 		const BattleRoomInfo *contactRoom = 0;
 		int enemiesInRoom = 1;
-		if (_factionAI->getBestEnemyContactPosition(&contactPos, &contactRoom, &enemiesInRoom))
+		bool visibleFactionContact = false;
+		if (_factionAI->getBestEnemyContactPosition(&contactPos, &contactRoom, &enemiesInRoom, &visibleFactionContact))
 		{
 			const int roomSize = contactRoom ? contactRoom->tileCount : 1;
 			const int unitRoomId = _factionAI->getRoomIdAt(_unit->getPosition());
@@ -871,6 +909,16 @@ void PlayerFactionAI::think(BattleAction *action)
 			const bool riskyRoom = smallDangerRoom && (enemiesInRoom > 1 || contactRoom->tileCount > 16 || contactRoom->doorCount + contactRoom->windowCount <= 2);
 			const bool insideDangerRoom = riskyRoom && unitRoomId == contactRoom->id;
 			const bool openAreaFight = !contactRoom || contactRoom->isOutside || contactRoom->isHall;
+			const bool huntingHiddenContact = !visibleFactionContact && !_visibleEnemies;
+			int activeAllies = 0;
+			for (auto *other : *_save->getUnits())
+			{
+				if (other && !other->isOut() && other->getFaction() == _unit->getFaction())
+				{
+					++activeAllies;
+				}
+			}
+			const bool endgameHiddenHunt = huntingHiddenContact && activeAllies <= 3;
 			if (action->number <= 1 && (!_spottingEnemies || insideDangerRoom) && (insideDangerRoom || (!_visibleEnemies && _attackAction.type == BA_RETHINK)) && setupFactionStalkAmbush(contactPos, contactRoom, enemiesInRoom, action->weapon))
 			{
 				_AIMode = AI_COMBAT;
@@ -882,6 +930,7 @@ void PlayerFactionAI::think(BattleAction *action)
 			Position bestPos = _unit->getPosition();
 			int currentDist = Position::distance2d(bestPos, contactPos);
 			int currentSpotters = getSpottingUnits(bestPos);
+			int currentExposure = getEnemyFireExposure(bestPos);
 			int bestDist = currentDist;
 			int bestSpotters = currentSpotters;
 			auto supportCoverScore = [&](const Position &pos) -> int
@@ -983,14 +1032,18 @@ void PlayerFactionAI::think(BattleAction *action)
 				return penalty;
 			};
 			const bool hasRangedWeapon = _rifle || _blaster || _grenade || !_melee;
-			const int desiredOpenDist = hasRangedWeapon ? preferredRange : 4;
-			const int maxSupportMoveDistance = openAreaFight ? 8 : 6;
-			const int reserveMoveTU = hasRangedWeapon ? 20 : 12;
-			const int minOpenDistance = std::max(3, desiredOpenDist - (playerRole == ROLE_ASSAULT ? 4 : 5));
-			const int maxOpenDistance = desiredOpenDist + (playerRole == ROLE_MARKSMAN || playerRole == ROLE_HEAVY ? 5 : 4);
+			const int desiredOpenDist = huntingHiddenContact ? (endgameHiddenHunt ? std::max(7, preferredRange - 1) : std::max(5, preferredRange - 4)) : (hasRangedWeapon ? preferredRange : 4);
+			const int maxSupportMoveDistance = endgameHiddenHunt ? 2 : (huntingHiddenContact ? 6 : (openAreaFight ? 8 : 6));
+			const int reserveMoveTU = endgameHiddenHunt ? 22 : (huntingHiddenContact ? 8 : (hasRangedWeapon ? 20 : 12));
+			const int minOpenDistance = huntingHiddenContact ? (endgameHiddenHunt ? 5 : 2) : std::max(3, desiredOpenDist - (playerRole == ROLE_ASSAULT ? 4 : 5));
+			const int maxOpenDistance = huntingHiddenContact ? desiredOpenDist + (endgameHiddenHunt ? 4 : 8) : desiredOpenDist + (playerRole == ROLE_MARKSMAN || playerRole == ROLE_HEAVY ? 5 : 4);
 			int bestSupportScore = openAreaFight
 				? abs(bestDist - desiredOpenDist) * 6 + bestSpotters * 40 - supportCoverScore(bestPos) * 5 + allyCrowdingPenalty(bestPos) + allyFireLanePenalty(bestPos)
 				: bestDist * 4 + bestSpotters * 20 - supportCoverScore(bestPos) * 3 + allyCrowdingPenalty(bestPos) + allyFireLanePenalty(bestPos);
+			if (huntingHiddenContact && currentDist <= desiredOpenDist + 2 && currentSpotters == 0)
+			{
+				bestSupportScore -= 120;
+			}
 			for (auto tileIndex : _reachable)
 			{
 				Tile *tile = _save->getTile(tileIndex);
@@ -1004,7 +1057,7 @@ void PlayerFactionAI::think(BattleAction *action)
 				{
 					continue;
 				}
-				if (_knownEnemies && moveDist * 6 > std::max(0, _unit->getTimeUnits() - reserveMoveTU))
+				if ((_knownEnemies || huntingHiddenContact) && moveDist * 6 > std::max(0, _unit->getTimeUnits() - reserveMoveTU))
 				{
 					continue;
 				}
@@ -1017,7 +1070,12 @@ void PlayerFactionAI::think(BattleAction *action)
 					continue;
 				}
 				int spotters = getSpottingUnits(pos);
-				if (spotters > bestSpotters)
+				int exposure = getEnemyFireExposure(pos);
+				if (!huntingHiddenContact && spotters > bestSpotters)
+				{
+					continue;
+				}
+				if (exposure > currentExposure + 60 && exposure > 90)
 				{
 					continue;
 				}
@@ -1030,13 +1088,27 @@ void PlayerFactionAI::think(BattleAction *action)
 				{
 					continue;
 				}
-				if (dist > currentDist + (spotters < currentSpotters ? 8 : 4))
+				if (endgameHiddenHunt && supportCoverScore(pos) < supportCoverScore(bestPos))
+				{
+					continue;
+				}
+				if (endgameHiddenHunt && dist < currentDist - 2)
+				{
+					continue;
+				}
+				if (!huntingHiddenContact && dist > currentDist + (spotters < currentSpotters ? 8 : 4))
 				{
 					continue;
 				}
 				int supportScore = openAreaFight
 					? abs(dist - desiredOpenDist) * 6 + spotters * 40 + moveDist * 3 - supportCoverScore(pos) * 5 + allyCrowdingPenalty(pos) + allyFireLanePenalty(pos)
 					: dist * 4 + spotters * 20 + moveDist * 2 - supportCoverScore(pos) * 3 + allyCrowdingPenalty(pos) + allyFireLanePenalty(pos);
+				supportScore += exposure;
+				if (huntingHiddenContact)
+				{
+					supportScore -= std::max(0, currentDist - dist) * 12;
+					supportScore += spotters * 20;
+				}
 				if (supportScore < bestSupportScore)
 				{
 					bestSpotters = spotters;
@@ -1072,6 +1144,10 @@ void PlayerFactionAI::think(BattleAction *action)
 						<< ", avoidedRoom=" << riskyRoom
 						<< ", insideDangerRoom=" << insideDangerRoom
 						<< ", openAreaFight=" << openAreaFight
+						<< ", visibleFactionContact=" << visibleFactionContact
+						<< ", huntingHiddenContact=" << huntingHiddenContact
+						<< ", endgameHiddenHunt=" << endgameHiddenHunt
+						<< ", activeAllies=" << activeAllies
 						<< ", role=" << (int)playerRole
 						<< ", desiredOpenDistance=" << desiredOpenDist
 						<< ", minOpenDistance=" << minOpenDistance
@@ -1243,7 +1319,7 @@ factionRoomTacticsDone:
 		{
 			action->number -= 1;
 		}
-		else if (action->type == BA_WALK && _stalkAmbushAction)
+		else if (action->type == BA_WALK && (_stalkAmbushAction || _cleanShotMoveAction || _fallbackCoverAction))
 		{
 			action->finalAction = true;
 			action->kneel = _unit->getArmor()->allowsKneeling(false);
@@ -1252,7 +1328,7 @@ factionRoomTacticsDone:
 		{
 			action->waypoints = _attackAction.waypoints;
 		}
-		else if (action->type == BA_AIMEDSHOT || action->type == BA_AUTOSHOT)
+		else if (action->type == BA_AIMEDSHOT || action->type == BA_AUTOSHOT || action->type == BA_SNAPSHOT)
 		{
 			action->kneel = _unit->getArmor()->allowsKneeling(false);
 		}
@@ -1318,7 +1394,7 @@ factionRoomTacticsDone:
 		const bool saferSpottingMove = targetSpotters < _spottingEnemies && (targetCover >= currentCover || targetSpotters + 1 < _spottingEnemies || defensiveMoveDistance <= 2);
 		const bool betterCoverMove = targetSpotters <= _spottingEnemies && targetCover >= currentCover + 6;
 		const bool defensiveMove = defensiveMoveDistance <= 4 && adjacentAllies == 0 && (saferSpottingMove || betterCoverMove);
-		if (!firePointMove && !defensiveMove)
+		if (!firePointMove && !defensiveMove && !_fallbackCoverAction)
 		{
 			if (Options::autoBattleLog)
 			{
@@ -1340,7 +1416,7 @@ factionRoomTacticsDone:
 			action->finalAction = true;
 			action->kneel = _unit->getArmor()->allowsKneeling(false);
 		}
-		else if (defensiveMove && Options::autoBattleLog)
+		else if ((defensiveMove || _fallbackCoverAction) && Options::autoBattleLog)
 		{
 			std::ostringstream log;
 			log << "Player faction defensive move allowed: unit=" << _unit->getId()
@@ -1357,7 +1433,7 @@ factionRoomTacticsDone:
 		}
 	}
 
-	if (_unit->getFaction() == FACTION_PLAYER && action->type == BA_WALK && _knownEnemies)
+	if (_unit->getFaction() == FACTION_PLAYER && action->type == BA_WALK && _knownEnemies && (_visibleEnemies || _spottingEnemies))
 	{
 		const int moveDistance = Position::distance2d(action->target, _unit->getPosition());
 		int reserveTU = 12;
@@ -1371,7 +1447,7 @@ factionRoomTacticsDone:
 			}
 		}
 		const int estimatedMoveTU = moveDistance * 5;
-		if (estimatedMoveTU > std::max(0, _unit->getTimeUnits() - reserveTU))
+		if (!_fallbackCoverAction && estimatedMoveTU > std::max(0, _unit->getTimeUnits() - reserveTU))
 		{
 			if (Options::autoBattleLog)
 			{
@@ -1874,6 +1950,19 @@ void PlayerFactionAI::setupAttack()
 			}
 		}
 	}
+	else if (_unit->getFaction() == FACTION_PLAYER && _factionAI)
+	{
+		BattleUnit *assignedTarget = _factionAI->getAssignedTarget(_unit);
+		if (assignedTarget && !assignedTarget->isOut() && _rifle)
+		{
+			_aggroTarget = assignedTarget;
+			if (!_attackAction.weapon)
+			{
+				_attackAction.weapon = selectBestCarriedWeapon();
+			}
+			setupCleanShotMove(assignedTarget);
+		}
+	}
 
 	if (_attackAction.type != BA_RETHINK)
 	{
@@ -2359,6 +2448,89 @@ int PlayerFactionAI::getSpottingUnits(const Position& pos) const
 	return tally;
 }
 
+int PlayerFactionAI::getEnemyFireExposure(const Position& pos) const
+{
+	Tile *tile = _save->getTile(pos);
+	if (!tile)
+	{
+		return 1000;
+	}
+	int exposure = 0;
+	for (auto *enemy : *_save->getUnits())
+	{
+		if (!enemy || enemy->isOut() || enemy->getFaction() == _unit->getFaction())
+		{
+			continue;
+		}
+		BattleItem *weapon = enemy->getMainHandWeapon(false);
+		if (!weapon || weapon->getRules()->getBattleType() != BT_FIREARM || !_save->canUseWeapon(weapon, enemy, false, BA_SNAPSHOT))
+		{
+			continue;
+		}
+		const int dist = Position::distance2d(pos, enemy->getPosition());
+		if (dist > 24)
+		{
+			continue;
+		}
+		BattleAction action;
+		action.actor = enemy;
+		action.weapon = weapon;
+		action.target = pos;
+		Position origin = _save->getTileEngine()->getOriginVoxel(action, 0);
+		Position targetVoxel;
+		if (_save->getTileEngine()->canTargetUnit(&origin, tile, &targetVoxel, enemy, false))
+		{
+			exposure += 30 + std::max(0, weapon->getRules()->getPower()) / 3 + std::max(0, weapon->getRules()->getAccuracySnap()) / 5;
+		}
+	}
+	return exposure;
+}
+
+int PlayerFactionAI::scoreTargetPriority(BattleUnit *target, bool assigned, bool visible, int distance) const
+{
+	if (!target)
+	{
+		return -100000;
+	}
+	int score = 60;
+	score -= distance * 4;
+	if (assigned)
+	{
+		score += visible ? 120 : 35;
+	}
+	if (visible)
+	{
+		score += 45;
+	}
+	if (target->getHealth() > 0)
+	{
+		score += std::max(0, 80 - target->getHealth()) * 2;
+		if (target->getHealth() <= 35)
+		{
+			score += 120;
+		}
+	}
+	score += target->getFatalWounds() * 20;
+	score += std::max(0, target->getTimeUnits()) / 2;
+	BattleItem *enemyWeapon = target->getMainHandWeapon(false);
+	if (enemyWeapon && enemyWeapon->getRules())
+	{
+		const RuleItem *rule = enemyWeapon->getRules();
+		score += std::max(0, rule->getPower()) / 2;
+		score += std::max(std::max(rule->getAccuracySnap(), rule->getAccuracyAimed()), rule->getAccuracyAuto()) / 3;
+		if (rule->getBattleType() == BT_MELEE)
+		{
+			score += distance <= 5 ? 90 : 25;
+		}
+	}
+	if (_attackAction.weapon)
+	{
+		const int preferred = getPreferredEngagementRange(_attackAction.weapon);
+		score -= abs(distance - preferred) * 3;
+	}
+	return score;
+}
+
 /**
  * Selects the nearest known living target we can see/reach and returns the number of visible enemies.
  * This function includes civilians as viable targets.
@@ -2371,15 +2543,18 @@ int PlayerFactionAI::selectNearestTarget()
 	_aggroTarget = 0;
 	Position target;
 	BattleUnit *assignedTarget = _factionAI ? _factionAI->getAssignedTarget(_unit) : 0;
+	int bestTargetScore = -100000;
 	for (auto* bu : *_save->getUnits())
 	{
-		if (validTarget(bu, true, true) &&
-			_save->getTileEngine()->visible(_unit, bu->getTile()))
+		const bool assigned = assignedTarget == bu;
+		const bool visible = bu && bu->getTile() && _save->getTileEngine()->visible(_unit, bu->getTile());
+		if (validTarget(bu, true, true) && (visible || assigned))
 		{
-			tally++;
+			if (visible)
+			{
+				tally++;
+			}
 			int dist = Position::distance2d(_unit->getPosition(), bu->getPosition());
-			const bool assigned = assignedTarget == bu;
-			if (assigned || dist < _closestDist)
 			{
 				bool valid = false;
 				if (_rifle || !_melee)
@@ -2401,19 +2576,12 @@ int PlayerFactionAI::selectNearestTarget()
 				}
 				if (valid)
 				{
-					_closestDist = dist;
-					_aggroTarget = bu;
-					if (assigned)
+					const int targetScore = scoreTargetPriority(bu, assigned, visible, dist);
+					if (targetScore > bestTargetScore || (targetScore == bestTargetScore && dist < _closestDist))
 					{
-						if (Options::autoBattleLog)
-						{
-							std::ostringstream log;
-							log << "Player faction target accepted: unit=" << _unit->getId()
-								<< ", target=" << bu->getId()
-								<< ", reason=" << _factionAI->getAssignmentReason(_unit);
-							_save->appendToAutoBattleLog(log.str());
-						}
-						break;
+						bestTargetScore = targetScore;
+						_closestDist = dist;
+						_aggroTarget = bu;
 					}
 				}
 			}
@@ -2421,7 +2589,18 @@ int PlayerFactionAI::selectNearestTarget()
 	}
 	if (_aggroTarget)
 	{
-		return tally;
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction target accepted: unit=" << _unit->getId()
+				<< ", target=" << _aggroTarget->getId()
+				<< ", score=" << bestTargetScore
+				<< ", distance=" << _closestDist
+				<< ", assigned=" << (assignedTarget == _aggroTarget)
+				<< ", reason=" << (_factionAI ? _factionAI->getAssignmentReason(_unit) : "");
+			_save->appendToAutoBattleLog(log.str());
+		}
+		return std::max(tally, 1);
 	}
 
 	return 0;
@@ -2759,6 +2938,14 @@ int PlayerFactionAI::scoreFiringMode(BattleAction *action, BattleUnit *target, b
 		else if (role == ROLE_SUPPORT && distance > preferred + 3)
 		{
 			roleScoreModifier -= 18;
+		}
+		if (action->type == BA_AUTOSHOT && distance <= preferred + 1)
+		{
+			roleScoreModifier += 22;
+		}
+		if (action->type == BA_SNAPSHOT && target && target->getHealth() > 0 && target->getHealth() <= 35)
+		{
+			roleScoreModifier += 18;
 		}
 		if (action->type == BA_AUTOSHOT && distance > preferred + 2)
 		{
@@ -3173,22 +3360,35 @@ bool PlayerFactionAI::findFirePoint()
 
 bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 {
-	if (_unit->getFaction() != FACTION_PLAYER || !target || target->isOut() || !_attackAction.weapon || _reachableWithAttack.empty())
+	if (_unit->getFaction() != FACTION_PLAYER || !target || target->isOut() || !_attackAction.weapon || (_reachableWithAttack.empty() && _reachable.empty()))
 	{
+		if (_unit->getFaction() == FACTION_PLAYER && Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction clean shot move rejected early: unit=" << _unit->getId()
+				<< ", target=" << (target ? target->getId() : -1)
+				<< ", hasWeapon=" << (_attackAction.weapon != 0)
+				<< ", reachable=" << _reachable.size()
+				<< ", reachableWithAttack=" << _reachableWithAttack.size();
+			_save->appendToAutoBattleLog(log.str());
+		}
 		return false;
 	}
 
 	const PlayerAIRole role = getPlayerAIRole(_attackAction.weapon);
 	const int preferredRange = getPreferredEngagementRange(_attackAction.weapon);
 	const int currentSpotters = getSpottingUnits(_unit->getPosition());
+	const int currentExposure = getEnemyFireExposure(_unit->getPosition());
 	const int currentDist = Position::distance2d(_unit->getPosition(), target->getPosition());
 	const bool meleeRole = role == ROLE_MELEE || _attackAction.weapon->getRules()->getBattleType() == BT_MELEE;
 	int bestScore = -100000;
 	Position bestPos = _unit->getPosition();
 	int bestSpotters = currentSpotters;
 	int bestDist = currentDist;
+	const bool targetVisible = target->getTile() && _save->getTileEngine()->visible(_unit, target->getTile());
 
-	for (auto tileIndex : _reachableWithAttack)
+	const std::vector<int> &reachableTiles = _reachableWithAttack.empty() ? _reachable : _reachableWithAttack;
+	for (auto tileIndex : reachableTiles)
 	{
 		Tile *tile = _save->getTile(tileIndex);
 		if (!tile || tile->getDangerous() || (tile->getUnit() && tile->getUnit() != _unit))
@@ -3219,7 +3419,8 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 
 		Position origin = pos.toVoxel() + Position(8, 8, _unit->getHeight() + _unit->getFloatHeight() - tile->getTerrainLevel() - 4);
 		Position targetVoxel;
-		if (!meleeRole && !_save->getTileEngine()->canTargetUnit(&origin, target->getTile(), &targetVoxel, _unit, false, target))
+		const bool hasLine = meleeRole || _save->getTileEngine()->canTargetUnit(&origin, target->getTile(), &targetVoxel, _unit, false, target);
+		if (!hasLine && targetVisible)
 		{
 			continue;
 		}
@@ -3260,7 +3461,12 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 		}
 
 		const int spotters = getSpottingUnits(pos);
+		const int exposure = getEnemyFireExposure(pos);
 		if (spotters > currentSpotters && spotters > 0)
+		{
+			continue;
+		}
+		if (exposure > currentExposure + 60 && exposure > 90)
 		{
 			continue;
 		}
@@ -3286,7 +3492,14 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 		int score = 220 - abs(dist - preferredRange) * (role == ROLE_MARKSMAN || role == ROLE_HEAVY ? 5 : 3);
 		score -= moveTU * 2;
 		score -= spotters * 45;
+		score -= exposure;
 		score += cover * 5;
+		if (!hasLine)
+		{
+			score = 120 - dist * 5 - moveTU * 2 + cover * 4 - spotters * 35;
+			score -= exposure;
+			score += std::max(0, currentDist - dist) * 18;
+		}
 		if (spotters < currentSpotters)
 		{
 			score += 45;
@@ -3306,6 +3519,18 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 
 	if (bestScore <= 90 || bestPos == _unit->getPosition())
 	{
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction clean shot move rejected: unit=" << _unit->getId()
+				<< ", targetUnit=" << target->getId()
+				<< ", bestScore=" << bestScore
+				<< ", bestPos=" << bestPos
+				<< ", current=" << _unit->getPosition()
+				<< ", reachable=" << _reachable.size()
+				<< ", reachableWithAttack=" << _reachableWithAttack.size();
+			_save->appendToAutoBattleLog(log.str());
+		}
 		return false;
 	}
 
@@ -3315,6 +3540,7 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 	_attackAction.target = bestPos;
 	_attackAction.finalFacing = _save->getTileEngine()->getDirectionTo(bestPos, target->getPosition());
 	_AIMode = AI_COMBAT;
+	_cleanShotMoveAction = true;
 	if (Options::autoBattleLog)
 	{
 		std::ostringstream log;
@@ -3327,6 +3553,229 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 			<< ", spotters=" << bestSpotters
 			<< ", role=" << (int)role
 			<< ", reason=free_fire_lane_and_keep_shot_reserve";
+		_save->appendToAutoBattleLog(log.str());
+	}
+	return true;
+}
+
+bool PlayerFactionAI::setupFallbackCoverMove()
+{
+	if (_unit->getFaction() != FACTION_PLAYER || _reachable.empty() || (!_visibleEnemies && !_spottingEnemies))
+	{
+		return false;
+	}
+	Position facePos = _unit->getPosition();
+	BattleUnit *assigned = _factionAI ? _factionAI->getAssignedTarget(_unit) : 0;
+	if (_aggroTarget && !_aggroTarget->isOut())
+	{
+		facePos = _aggroTarget->getPosition();
+	}
+	else if (assigned && !assigned->isOut())
+	{
+		facePos = assigned->getPosition();
+	}
+	else if (_factionAI)
+	{
+		_factionAI->getBestEnemyContactPosition(&facePos);
+	}
+
+	auto coverScoreAt = [&](const Position &pos) -> int
+	{
+		Tile *tile = _save->getTile(pos);
+		if (!tile)
+		{
+			return 0;
+		}
+		int score = 0;
+		if (tile->getMapData(O_OBJECT))
+		{
+			score += 10;
+		}
+		if (tile->getMapData(O_NORTHWALL))
+		{
+			score += facePos.y < pos.y ? 16 : 6;
+		}
+		if (tile->getMapData(O_WESTWALL))
+		{
+			score += facePos.x < pos.x ? 16 : 6;
+		}
+		const Position adjacent[4] = { Position(0, -1, 0), Position(1, 0, 0), Position(0, 1, 0), Position(-1, 0, 0) };
+		for (const auto &offset : adjacent)
+		{
+			Tile *adjacentTile = _save->getTile(pos + offset);
+			if (!adjacentTile)
+			{
+				continue;
+			}
+			if (adjacentTile->getMapData(O_OBJECT))
+			{
+				score += 3;
+			}
+			if (adjacentTile->getMapData(O_NORTHWALL) || adjacentTile->getMapData(O_WESTWALL))
+			{
+				score += 2;
+			}
+		}
+		return score;
+	};
+
+	auto allyCrowdingPenalty = [&](const Position &pos) -> int
+	{
+		int penalty = 0;
+		for (auto *other : *_save->getUnits())
+		{
+			if (!other || other == _unit || other->isOut() || other->getFaction() != _unit->getFaction() || other->getPosition().z != pos.z)
+			{
+				continue;
+			}
+			const int dist = Position::distance2d(pos, other->getPosition());
+			if (dist <= 1)
+			{
+				penalty += 120;
+			}
+			else if (dist <= 2)
+			{
+				penalty += 35;
+			}
+		}
+		return penalty;
+	};
+
+	auto allyLanePenalty = [&](const Position &pos) -> int
+	{
+		int penalty = 0;
+		const double px = (double)pos.x;
+		const double py = (double)pos.y;
+		for (auto *other : *_save->getUnits())
+		{
+			if (!other || other == _unit || other->isOut() || other->getFaction() != _unit->getFaction() || other->getPosition().z != pos.z)
+			{
+				continue;
+			}
+			BattleItem *otherWeapon = other->getMainHandWeapon(false);
+			if (!otherWeapon || otherWeapon->getRules()->getBattleType() != BT_FIREARM)
+			{
+				continue;
+			}
+			const Position otherPos = other->getPosition();
+			const double vx = (double)(facePos.x - otherPos.x);
+			const double vy = (double)(facePos.y - otherPos.y);
+			const double lenSq = vx * vx + vy * vy;
+			if (lenSq < 0.1)
+			{
+				continue;
+			}
+			const double ax = px - otherPos.x;
+			const double ay = py - otherPos.y;
+			const double t = (ax * vx + ay * vy) / lenSq;
+			if (t <= 0.0 || t >= 1.0)
+			{
+				continue;
+			}
+			const double dx = ax - vx * t;
+			const double dy = ay - vy * t;
+			if (dx * dx + dy * dy <= 1.0)
+			{
+				penalty += 90;
+			}
+		}
+		return penalty;
+	};
+
+	const Position current = _unit->getPosition();
+	const int currentSpotters = getSpottingUnits(current);
+	const int currentExposure = getEnemyFireExposure(current);
+	const int currentCover = coverScoreAt(current);
+	const int currentDist = Position::distance2d(current, facePos);
+	const int preferredRange = getPreferredEngagementRange(_attackAction.weapon);
+	const bool ranged = _attackAction.weapon && _attackAction.weapon->getRules()->getBattleType() == BT_FIREARM;
+	int bestScore = 0;
+	Position bestPos = current;
+	int bestSpotters = currentSpotters;
+	int bestExposure = currentExposure;
+	int bestCover = currentCover;
+
+	for (auto tileIndex : _reachable)
+	{
+		Tile *tile = _save->getTile(tileIndex);
+		if (!tile || tile->getDangerous() || (tile->getUnit() && tile->getUnit() != _unit))
+		{
+			continue;
+		}
+		const Position pos = tile->getPosition();
+		const int moveDist = Position::distance2d(pos, current);
+		if (pos.z != current.z || moveDist == 0 || moveDist > 4)
+		{
+			continue;
+		}
+		if (moveDist * 6 > _unit->getTimeUnits())
+		{
+			continue;
+		}
+		const int spotters = getSpottingUnits(pos);
+		const int exposure = getEnemyFireExposure(pos);
+		const int cover = coverScoreAt(pos);
+		const int dist = Position::distance2d(pos, facePos);
+		if (ranged && dist < 2)
+		{
+			continue;
+		}
+		int score = 0;
+		score += (currentSpotters - spotters) * 95;
+		score += (currentExposure - exposure);
+		score += (cover - currentCover) * 5;
+		score -= moveDist * 8;
+		score -= allyCrowdingPenalty(pos);
+		score -= allyLanePenalty(pos);
+		if (ranged)
+		{
+			score -= abs(dist - preferredRange) * 2;
+			score += dist >= currentDist ? 12 : -18;
+		}
+		else
+		{
+			score += dist <= currentDist ? 10 : -8;
+		}
+		if (spotters > currentSpotters)
+		{
+			score -= 140;
+		}
+		if (exposure > currentExposure && spotters >= currentSpotters)
+		{
+			score -= 90;
+		}
+		if (score > bestScore)
+		{
+			bestScore = score;
+			bestPos = pos;
+			bestSpotters = spotters;
+			bestExposure = exposure;
+			bestCover = cover;
+		}
+	}
+
+	if (bestPos == current || bestScore < 45)
+	{
+		return false;
+	}
+
+	_attackAction.actor = _unit;
+	_attackAction.weapon = selectBestCarriedWeapon();
+	_attackAction.type = BA_WALK;
+	_attackAction.target = bestPos;
+	_attackAction.finalFacing = _save->getTileEngine()->getDirectionTo(bestPos, facePos);
+	_AIMode = AI_COMBAT;
+	_fallbackCoverAction = true;
+	if (Options::autoBattleLog)
+	{
+		std::ostringstream log;
+		log << "Player faction fallback cover move: unit=" << _unit->getId()
+			<< ", target=" << bestPos
+			<< ", face=" << facePos
+			<< ", score=" << bestScore
+			<< ", spotters=" << currentSpotters << "->" << bestSpotters
+			<< ", exposure=" << currentExposure << "->" << bestExposure
+			<< ", cover=" << currentCover << "->" << bestCover;
 		_save->appendToAutoBattleLog(log.str());
 	}
 	return true;

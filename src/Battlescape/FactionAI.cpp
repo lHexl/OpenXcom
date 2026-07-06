@@ -558,7 +558,7 @@ bool FactionAI::getBestEnemyContactPosition(Position *position) const
 	return getBestEnemyContactPosition(position, 0, 0);
 }
 
-bool FactionAI::getBestEnemyContactPosition(Position *position, const BattleRoomInfo **roomInfo, int *enemiesInRoom) const
+bool FactionAI::getBestEnemyContactPosition(Position *position, const BattleRoomInfo **roomInfo, int *enemiesInRoom, bool *visibleContact) const
 {
 	if (!position || _playerPlan.enemies.empty())
 	{
@@ -587,6 +587,10 @@ bool FactionAI::getBestEnemyContactPosition(Position *position, const BattleRoom
 	if (enemiesInRoom)
 	{
 		*enemiesInRoom = bestContact->enemiesInRoom;
+	}
+	if (visibleContact)
+	{
+		*visibleContact = bestContact->visibleContact;
 	}
 	return true;
 }
@@ -645,9 +649,22 @@ int FactionAI::scoreAssignment(BattleUnit *actor, const PlayerFactionEnemyContac
 	const int distance = Position::distance2d(actor->getPosition(), contact.enemy->getPosition());
 	int score = contact.threatScore + contact.focusScore;
 	score -= distance * 3;
+	BattleItem *weapon = actor->getMainHandWeapon(false);
+	if (weapon && weapon->getRules())
+	{
+		const RuleItem *rule = weapon->getRules();
+		const UnitStats *stats = actor->getBaseStats();
+		const int bestAccuracy = std::max(std::max(rule->getAccuracySnap(), rule->getAccuracyAimed()), rule->getAccuracyAuto());
+		const int expectedPressure = std::max(0, rule->getPower()) + bestAccuracy * std::max(30, (int)stats->firing) / 100;
+		score += expectedPressure / 2;
+		if (rule->getBattleType() == BT_MELEE)
+		{
+			score += distance <= 3 ? 45 : -60;
+		}
+	}
 	if (std::find(contact.canShootBy.begin(), contact.canShootBy.end(), actor) != contact.canShootBy.end())
 	{
-		score += 110;
+		score += 150;
 	}
 	else if (std::find(contact.visibleBy.begin(), contact.visibleBy.end(), actor) != contact.visibleBy.end())
 	{
@@ -684,6 +701,7 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 		}
 	}
 
+	std::vector<PlayerFactionEnemyContact> hiddenContacts;
 	for (auto* enemy : *_save->getUnits())
 	{
 		if (!enemy || enemy->isOut() || enemy->getFaction() != FACTION_HOSTILE)
@@ -702,6 +720,7 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 		contact.roomOutside = false;
 		contact.roomHall = false;
 		contact.enemiesInRoom = 1;
+		contact.visibleContact = false;
 		if (const BattleRoomInfo *room = getRoomInfo(contact.roomId))
 		{
 			contact.roomSize = room->tileCount;
@@ -716,16 +735,40 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 			if (canSeeEnemy(ally, enemy))
 			{
 				contact.visibleBy.push_back(ally);
-				if (canShootEnemy(ally, enemy))
-				{
-					contact.canShootBy.push_back(ally);
-				}
+			}
+			if (canShootEnemy(ally, enemy))
+			{
+				contact.canShootBy.push_back(ally);
 			}
 		}
-		if (!contact.visibleBy.empty())
+		contact.visibleContact = !contact.visibleBy.empty();
+		if (contact.visibleContact)
 		{
 			contact.focusScore = 20 * (int)contact.visibleBy.size() + 35 * (int)contact.canShootBy.size();
 			_playerPlan.enemies.push_back(contact);
+		}
+		else
+		{
+			int nearestAllyDist = 100000;
+			for (auto *ally : _playerPlan.allies)
+			{
+				nearestAllyDist = std::min(nearestAllyDist, Position::distance2d(ally->getPosition(), enemy->getPosition()));
+			}
+			contact.focusScore = -90 - nearestAllyDist * 2;
+			contact.threatScore = contact.threatScore * 2 / 3;
+			hiddenContacts.push_back(contact);
+		}
+	}
+	if (_playerPlan.enemies.empty() && !hiddenContacts.empty())
+	{
+		std::sort(hiddenContacts.begin(), hiddenContacts.end(), [](const PlayerFactionEnemyContact &a, const PlayerFactionEnemyContact &b)
+		{
+			return a.threatScore + a.focusScore > b.threatScore + b.focusScore;
+		});
+		const int hiddenLimit = std::min(1, (int)hiddenContacts.size());
+		for (int i = 0; i < hiddenLimit; ++i)
+		{
+			_playerPlan.enemies.push_back(hiddenContacts[i]);
 		}
 	}
 
@@ -762,11 +805,14 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 			const bool canSee = std::find(contact.visibleBy.begin(), contact.visibleBy.end(), ally) != contact.visibleBy.end();
 			if (!canShoot && !canSee)
 			{
-				continue;
+				if (contact.visibleContact)
+				{
+					continue;
+				}
 			}
 			const int assignedCount = assignedCountByEnemyId[contact.enemy->getId()];
-			int maxAssignees = 2;
-			if (contact.threatScore >= 130 || contact.canShootBy.size() >= 2)
+			int maxAssignees = contact.visibleContact ? 2 : (int)_playerPlan.allies.size();
+			if (contact.visibleContact && (contact.threatScore >= 130 || contact.canShootBy.size() >= 2))
 			{
 				maxAssignees = 3;
 			}
@@ -803,6 +849,7 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 				<< ", hall=" << bestContact->roomHall
 				<< ", visibleBy=" << bestContact->visibleBy.size()
 				<< ", canShootBy=" << bestContact->canShootBy.size()
+				<< ", visibleContact=" << bestContact->visibleContact
 				<< ", assignedCount=" << assignedCountByEnemyId[bestContact->enemy->getId()];
 			_playerPlan.assignmentReasonByUnitId[ally->getId()] = reason.str();
 		}
@@ -839,6 +886,7 @@ void FactionAI::logPlayerPlan() const
 			<< ", entries=" << (getRoomInfo(contact.roomId) ? getRoomInfo(contact.roomId)->entryPositions.size() : 0)
 			<< ", outside=" << contact.roomOutside
 			<< ", hall=" << contact.roomHall
+			<< ", visibleContact=" << contact.visibleContact
 			<< ", visibleBy=" << contact.visibleBy.size()
 			<< ", canShootBy=" << contact.canShootBy.size();
 		_save->appendToAutoBattleLog(line.str());

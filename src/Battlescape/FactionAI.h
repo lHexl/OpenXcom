@@ -57,6 +57,7 @@ struct PlayerFactionEnemyContact
 	bool roomOutside;
 	bool roomHall;
 	int enemiesInRoom;
+	bool visibleContact;
 };
 
 struct PlayerFactionPlan
@@ -107,7 +108,7 @@ public:
 	std::string getAssignmentReason(BattleUnit *unit) const;
 	int getEnemyContactCount() const;
 	bool getBestEnemyContactPosition(Position *position) const;
-	bool getBestEnemyContactPosition(Position *position, const BattleRoomInfo **roomInfo, int *enemiesInRoom) const;
+	bool getBestEnemyContactPosition(Position *position, const BattleRoomInfo **roomInfo, int *enemiesInRoom, bool *visibleContact = 0) const;
 	int getRoomIdAt(Position pos) const { return getRoomId(pos); }
 	const BattleRoomInfo *getRoomInfoAt(Position pos) const { return getRoomInfo(getRoomId(pos)); }
 	const std::vector<BattleRoomInfo> &getKnownRooms() const { ensureRoomCache(); return _roomInfos; }

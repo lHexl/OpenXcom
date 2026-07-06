@@ -21,10 +21,8 @@
 #include "UnitTurnBState.h"
 #include "ProjectileFlyBState.h"
 #include "TileEngine.h"
-#include "PlayerFactionAI.h"
 #include "../Savegame/BattleUnit.h"
 #include "../Savegame/SavedBattleGame.h"
-#include "../Engine/Options.h"
 #include "../Engine/RNG.h"
 #include "BattlescapeGame.h"
 #include "../Mod/Mod.h"
@@ -71,13 +69,12 @@ void UnitPanicBState::think()
 			ba.actor = _unit;
 			ba.weapon = _unit->getMainHandWeapon();
 			{
-				const bool playerAutoBattle = Options::autoBattle && _unit->getFaction() == FACTION_PLAYER;
 				// make autoshots if possible.
-				ba.type = playerAutoBattle ? BA_SNAPSHOT : BA_AUTOSHOT;
+				ba.type = BA_AUTOSHOT;
 				ba.updateTU();
 				bool canShoot = ba.haveTU() && _parent->getSave()->canUseWeapon(ba.weapon, ba.actor, _berserking, ba.type);
 
-				if (!canShoot && !playerAutoBattle)
+				if (!canShoot)
 				{
 					ba.type = BA_SNAPSHOT;
 					ba.updateTU();
@@ -100,47 +97,23 @@ void UnitPanicBState::think()
 
 				if (canShoot)
 				{
-					BattleUnit *targetUnit = nullptr;
 					// if we see enemies, shoot at the closest living one.
 					if (!_unit->getVisibleUnits()->empty())
 					{
 						int dist = 255;
 						for (auto* bu : *_unit->getVisibleUnits())
 						{
-							if (!bu || bu->isOut() || bu->getFaction() == _unit->getFaction())
-							{
-								continue;
-							}
 							int newDist = Position::distance2d(_unit->getPosition(), bu->getPosition());
 							if (newDist < dist)
 							{
 								ba.target = bu->getPosition();
-								targetUnit = bu;
 								dist = newDist;
 							}
 						}
 					}
-					if (playerAutoBattle && !targetUnit)
-					{
-						return;
-					}
-					if (!targetUnit) // otherwise shoot randomly
+					else // otherwise shoot randomly
 					{
 						ba.target = Position(_unit->getPosition().x + RNG::generate(-6,6), _unit->getPosition().y + RNG::generate(-6,6), _unit->getPosition().z);
-					}
-					if (playerAutoBattle)
-					{
-						if (!dynamic_cast<PlayerFactionAI*>(_unit->getAIModule()))
-						{
-							_unit->setAIModule(new PlayerFactionAI(_parent->getSave(), _unit, 0));
-						}
-						if (PlayerFactionAI *playerAI = dynamic_cast<PlayerFactionAI*>(_unit->getAIModule()))
-						{
-							if (playerAI->projectileRiskyForAllies(&ba, targetUnit))
-							{
-								return;
-							}
-						}
 					}
 					// include the cost for facing our target
 					int turnCost = std::abs(_unit->getDirection() - _unit->directionTo(ba.target));
