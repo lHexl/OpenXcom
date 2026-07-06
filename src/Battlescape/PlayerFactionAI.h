@@ -81,6 +81,7 @@ private:
 	int scoreWeaponForUnit(BattleItem *weapon) const;
 	BattleItem *selectBestCarriedWeapon() const;
 	bool tryEquipGroundWeapon(BattleItem *item);
+	bool tryEquipGroundExplosive(BattleItem *item);
 	bool setupRoleWeaponPickup(BattleAction *action);
 public:
 	bool medikit_think(BattleMediKitType healOrStim);
@@ -150,6 +151,7 @@ public:
 	bool setupCleanShotMove(BattleUnit *target);
 	bool setupFallbackCoverMove();
 	/// Decides if we should throw a grenade/launch a missile to this position.
+	int scorePlayerGrenadeTarget(BattleItem *grenade, const Position &targetPos, int radius, bool proximity) const;
 	int explosiveEfficacy(Position targetPos, BattleUnit *attackingUnit, int radius, int diff, bool grenade = false) const;
 	bool explosiveProjectileRiskyForAllies(BattleAction *action, int radius, const Position *originPosition = 0, bool logRejection = true) const;
 	bool directProjectileRiskyForAllies(BattleAction *action, BattleUnit *target, bool logRejection = true) const;

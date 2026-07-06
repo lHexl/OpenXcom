@@ -657,6 +657,88 @@ bool PlayerFactionAI::tryEquipGroundWeapon(BattleItem *item)
 	return true;
 }
 
+bool PlayerFactionAI::tryEquipGroundExplosive(BattleItem *item)
+{
+	if (!item || !item->getTile() || item->getTile()->getPosition() != _unit->getPosition() || !item->getRules()->isGrenadeOrProxy())
+	{
+		return false;
+	}
+	BattleAction action;
+	action.actor = _unit;
+	action.weapon = item;
+	action.type = BA_THROW;
+	const int radius = item->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(action));
+	const int itemScore = std::max(0, item->getRules()->getPower()) * 2 + radius * 45 + (item->getRules()->getBattleType() == BT_PROXIMITYGRENADE ? 80 : 0);
+	if (radius <= 0 || itemScore < 180)
+	{
+		return false;
+	}
+	const RuleInventory *slot = 0;
+	BattleItem *replaced = 0;
+	if (!_unit->getItem(_save->getMod()->getInventoryRightHand()))
+	{
+		slot = _save->getMod()->getInventoryRightHand();
+	}
+	else if (!_unit->getItem(_save->getMod()->getInventoryLeftHand()))
+	{
+		slot = _save->getMod()->getInventoryLeftHand();
+	}
+	else
+	{
+		BattleItem *rightHand = _unit->getItem(_save->getMod()->getInventoryRightHand());
+		BattleItem *leftHand = _unit->getItem(_save->getMod()->getInventoryLeftHand());
+		const int rightScore = scoreWeaponForUnit(rightHand);
+		const int leftScore = scoreWeaponForUnit(leftHand);
+		if (rightScore <= leftScore)
+		{
+			slot = _save->getMod()->getInventoryRightHand();
+			replaced = rightHand;
+		}
+		else
+		{
+			slot = _save->getMod()->getInventoryLeftHand();
+			replaced = leftHand;
+		}
+	}
+	const int tuCost = item->getMoveToCost(slot);
+	if (_unit->getTimeUnits() < tuCost)
+	{
+		return false;
+	}
+	Tile *itemTile = item->getTile();
+	if (replaced)
+	{
+		replaced->moveToOwner(0);
+		itemTile->addItem(replaced, _save->getMod()->getInventoryGround());
+	}
+	if (!_unit->fitItemToInventory(slot, item))
+	{
+		if (replaced)
+		{
+			itemTile->removeItem(replaced);
+			_unit->fitItemToInventory(slot, replaced);
+		}
+		return false;
+	}
+	_unit->spendTimeUnits(tuCost);
+	_weaponPickedUp = true;
+	_grenade = true;
+	if (Options::autoBattleLog)
+	{
+		std::ostringstream log;
+		log << "Player faction explosive pickup: unit=" << _unit->getId()
+			<< ", item=" << item->getRules()->getType()
+			<< ", itemScore=" << itemScore
+			<< ", radius=" << radius
+			<< ", power=" << item->getRules()->getPower()
+			<< ", replaced=" << (replaced ? replaced->getRules()->getType() : "none")
+			<< ", tuCost=" << tuCost
+			<< ", position=" << _unit->getPosition();
+		_save->appendToAutoBattleLog(log.str());
+	}
+	return true;
+}
+
 bool PlayerFactionAI::setupRoleWeaponPickup(BattleAction *action)
 {
 	if (_unit->getFaction() != FACTION_PLAYER)
@@ -676,6 +758,15 @@ bool PlayerFactionAI::setupRoleWeaponPickup(BattleAction *action)
 	const int requiredGain = underContact ? 120 : (_knownEnemies ? 160 : 70);
 	int bestScore = currentScore + requiredGain;
 	int bestMoveDist = 100000;
+	bool hasCarriedExplosive = false;
+	for (auto *carried : *_unit->getInventory())
+	{
+		if (carried && carried->getRules()->isGrenadeOrProxy() && _save->getTurn() >= carried->getRules()->getAIUseDelay(_save->getMod()))
+		{
+			hasCarriedExplosive = true;
+			break;
+		}
+	}
 
 	auto considerTile = [&](Tile *tile)
 	{
@@ -689,6 +780,27 @@ bool PlayerFactionAI::setupRoleWeaponPickup(BattleAction *action)
 		}
 		for (auto *item : *tile->getInventory())
 		{
+			if (item && item->getRules()->isGrenadeOrProxy())
+			{
+				BattleAction grenadeAction;
+				grenadeAction.actor = _unit;
+				grenadeAction.weapon = item;
+				grenadeAction.type = BA_THROW;
+				const int radius = item->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(grenadeAction));
+				const int explosiveScore = std::max(0, item->getRules()->getPower()) * 2 + radius * 45 + (item->getRules()->getBattleType() == BT_PROXIMITYGRENADE ? 80 : 0);
+				if ((!hasCarriedExplosive && explosiveScore >= 180) || explosiveScore > bestScore)
+				{
+					const int moveDist = Position::distance2d(_unit->getPosition(), tile->getPosition());
+					if (moveDist <= (underContact ? 0 : 6))
+					{
+						bestItem = item;
+						bestPos = tile->getPosition();
+						bestScore = explosiveScore;
+						bestMoveDist = moveDist;
+					}
+				}
+				continue;
+			}
 			const int score = scoreWeaponForUnit(item);
 			if (score <= bestScore)
 			{
@@ -713,10 +825,24 @@ bool PlayerFactionAI::setupRoleWeaponPickup(BattleAction *action)
 	considerTile(_save->getTile(_unit->getPosition()));
 	if (bestItem && bestPos == _unit->getPosition())
 	{
-		if (tryEquipGroundWeapon(bestItem))
+		const bool explosiveItem = bestItem->getRules()->isGrenadeOrProxy();
+		if ((explosiveItem && tryEquipGroundExplosive(bestItem)) || tryEquipGroundWeapon(bestItem))
 		{
 			action->weapon = selectBestCarriedWeapon();
 			_attackAction.weapon = action->weapon;
+			if (explosiveItem)
+			{
+				_attackAction.type = BA_RETHINK;
+				grenadeAction();
+				if (_attackAction.type == BA_RETHINK)
+				{
+					_attackAction.actor = _unit;
+					_attackAction.weapon = action->weapon;
+					_attackAction.target = _unit->getPosition();
+					_attackAction.type = BA_NONE;
+					_AIMode = AI_COMBAT;
+				}
+			}
 			return true;
 		}
 	}
@@ -857,6 +983,17 @@ void PlayerFactionAI::think(BattleAction *action)
 
 	BattleItem *grenadeItem = _unit->getGrenadeFromBelt(_save);
 	_grenade = grenadeItem != 0;
+	if (!_grenade)
+	{
+		for (auto *item : *_unit->getInventory())
+		{
+			if (item && item->getRules()->isGrenadeOrProxy() && _save->getTurn() >= item->getRules()->getAIUseDelay(_save->getMod()))
+			{
+				_grenade = true;
+				break;
+			}
+		}
+	}
 	const int preferredRange = _unit->getFaction() == FACTION_PLAYER ? getPreferredEngagementRange(action->weapon) : 10;
 	const PlayerAIRole playerRole = _unit->getFaction() == FACTION_PLAYER ? getPlayerAIRole(action->weapon) : ROLE_ASSAULT;
 	if (_unit->getFaction() == FACTION_PLAYER && Options::autoBattleLog)
@@ -998,7 +1135,7 @@ void PlayerFactionAI::think(BattleAction *action)
 				const double py = (double)pos.y;
 				for (auto *other : *_save->getUnits())
 				{
-					if (!other || other == _unit || other->isOut() || other->getFaction() != _unit->getFaction() || other->getPosition().z != pos.z)
+			if (!other || other == _unit || other->isOut() || other->getFaction() != _unit->getFaction() || other->getPosition().z != pos.z)
 					{
 						continue;
 					}
@@ -3624,7 +3761,7 @@ bool PlayerFactionAI::setupFallbackCoverMove()
 		int penalty = 0;
 		for (auto *other : *_save->getUnits())
 		{
-			if (!other || other == _unit || other->isOut() || other->getFaction() != _unit->getFaction() || other->getPosition().z != pos.z)
+					if (!other || other == _unit || other->isOut() || other->getFaction() != _unit->getFaction() || other->getPosition().z != pos.z)
 			{
 				continue;
 			}
@@ -4766,67 +4903,332 @@ void PlayerFactionAI::extendedFireModeChoice(BattleActionCost& costAuto, BattleA
 	}
 }
 
+int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Position &targetPos, int radius, bool proximity) const
+{
+	if (!grenade || radius <= 0 || !_save->getTile(targetPos))
+	{
+		return -100000;
+	}
+	BattleAction action;
+	action.actor = _unit;
+	action.weapon = grenade;
+	action.type = BA_THROW;
+	action.target = targetPos;
+	if (explosiveProjectileRiskyForAllies(&action, radius, 0, false))
+	{
+		return -100000;
+	}
+
+	const int power = std::max(0, grenade->getRules()->getPower());
+	int enemiesAffected = 0;
+	int score = proximity ? 20 : 0;
+	for (auto *bu : *_save->getUnits())
+	{
+		if (!bu || bu->isOut())
+		{
+			continue;
+		}
+		if (abs(bu->getPosition().z - targetPos.z) > Options::battleExplosionHeight)
+		{
+			continue;
+		}
+		const int dist = Position::distance2d(bu->getPosition(), targetPos);
+		if (dist > radius)
+		{
+			continue;
+		}
+		if (bu->getFaction() == _unit->getFaction())
+		{
+			return -100000;
+		}
+		if (validTarget(bu, true, true))
+		{
+			++enemiesAffected;
+			const int armor = std::max(std::max(bu->getArmor(SIDE_FRONT), bu->getArmor(SIDE_LEFT)), bu->getArmor(SIDE_RIGHT));
+			int unitScore = 90;
+			unitScore += std::max(0, power - armor / 2);
+			unitScore += std::max(0, 90 - bu->getHealth());
+			if (bu->getHealth() > 70 || armor >= power / 2)
+			{
+				unitScore += 45;
+			}
+			unitScore -= dist * 8;
+			score += unitScore;
+		}
+	}
+
+	if (!proximity)
+	{
+		const int oldEfficacy = explosiveEfficacy(targetPos, _unit, radius, _attackAction.diff, true);
+		score += oldEfficacy * 120;
+		if (enemiesAffected == 0)
+		{
+			return -100000;
+		}
+		if (enemiesAffected == 1)
+		{
+			BattleUnit *target = _save->getTile(targetPos)->getUnit();
+			if (!target || target->getFaction() == _unit->getFaction())
+			{
+				score -= 80;
+			}
+			else if (target->getHealth() >= 60)
+			{
+				score += 75;
+			}
+		}
+	}
+	return score;
+}
+
 /**
  * Evaluates whether to throw a grenade at an enemy (or group of enemies) we can see.
  */
 void PlayerFactionAI::grenadeAction()
 {
-	// do we have a grenade on our belt?
-	BattleItem *grenade = _unit->getGrenadeFromBelt(_save);
-	BattleAction action;
-	action.weapon = grenade;
-	action.type = BA_THROW;
-	action.actor = _unit;
+	BattleAction bestAction;
+	bestAction.type = BA_RETHINK;
+	bestAction.actor = _unit;
+	int bestScore = -100000;
+	std::string bestReason;
 
-	action.updateTU();
-	action.Time += 4; // 4TUs for picking up the grenade
-	action += _unit->getActionTUs(BA_PRIME, grenade);
-	// do we have enough TUs to prime and throw the grenade?
-	if (action.haveTU())
+	auto tryGrenadeTarget = [&](BattleItem *grenade, const Position &baseTarget, const std::string &reason)
 	{
-		int radius = grenade->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(action));
-		if (explosiveEfficacy(_aggroTarget->getPosition(), _unit, radius, _attackAction.diff, true))
-		{
-			action.target = _aggroTarget->getPosition();
-		}
-		else if (!getNodeOfBestEfficacy(&action, radius))
+		if (!grenade || !grenade->getRules()->isGrenadeOrProxy() || _save->getTurn() < grenade->getRules()->getAIUseDelay(_save->getMod()))
 		{
 			return;
 		}
-		std::vector<std::pair<Position, int>> shifts;
-		if (grenade->getRules()->getBattleType() == BT_PROXIMITYGRENADE)
+		BattleAction action;
+		action.weapon = grenade;
+		action.type = BA_THROW;
+		action.actor = _unit;
+		action.target = baseTarget;
+		action.updateTU();
+		action.Time += 4;
+		action += _unit->getActionTUs(BA_PRIME, grenade);
+		if (!action.haveTU() || !_save->getTile(baseTarget))
 		{
-			// let's try to not throw the proxy below xcom's feet, otherwise they'll just throw it straight back :)
-			if (action.target.x < _save->getMapSizeX() - 1) shifts.push_back(std::make_pair(Position(1, 0, 0), _unit->distance3dToPositionSq(action.target + Position(1, 0, 0))));
-			if (action.target.y < _save->getMapSizeY() - 1) shifts.push_back(std::make_pair(Position(0, 1, 0), _unit->distance3dToPositionSq(action.target + Position(0, 1, 0))));
-			if (action.target.x > 0) shifts.push_back(std::make_pair(Position(-1, 0, 0), _unit->distance3dToPositionSq(action.target + Position(-1, 0, 0))));
-			if (action.target.y > 0) shifts.push_back(std::make_pair(Position(0, -1, 0), _unit->distance3dToPositionSq(action.target + Position(0, -1, 0))));
-			//RNG::shuffle(shifts);
+			return;
+		}
+		int radius = grenade->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(action));
+		if (radius <= 0)
+		{
+			return;
+		}
+		const bool proximity = grenade->getRules()->getBattleType() == BT_PROXIMITYGRENADE;
+		std::vector<std::pair<Position, int>> shifts;
+		if (proximity)
+		{
+			const Position candidates[9] = { Position(0, 0, 0), Position(1, 0, 0), Position(0, 1, 0), Position(-1, 0, 0), Position(0, -1, 0), Position(1, 1, 0), Position(1, -1, 0), Position(-1, 1, 0), Position(-1, -1, 0) };
+			for (const auto &candidate : candidates)
+			{
+				Position shifted = baseTarget + candidate;
+				if (shifted.x >= 0 && shifted.x < _save->getMapSizeX() && shifted.y >= 0 && shifted.y < _save->getMapSizeY() && shifted.z >= 0 && shifted.z < _save->getMapSizeZ())
+				{
+					shifts.push_back(std::make_pair(candidate, _unit->distance3dToPositionSq(shifted)));
+				}
+			}
 			std::sort(shifts.begin(), shifts.end(), [](auto& left, auto& right) {
 				return left.second < right.second;
 			});
-			// PS: if someone wants to calculate a better target spot (based on multiple enemies, RNG, day of the week or position of the stars), be my guest
 		}
 		else
 		{
-			// normal grenade
-			shifts.push_back(std::make_pair(Position(0, 0, 0), 0));
+			for (int dx = -2; dx <= 2; ++dx)
+			{
+				for (int dy = -2; dy <= 2; ++dy)
+				{
+					Position candidate(dx, dy, 0);
+					Position shifted = baseTarget + candidate;
+					if (shifted.x >= 0 && shifted.x < _save->getMapSizeX() && shifted.y >= 0 && shifted.y < _save->getMapSizeY() && shifted.z >= 0 && shifted.z < _save->getMapSizeZ())
+					{
+						shifts.push_back(std::make_pair(candidate, abs(dx) + abs(dy)));
+					}
+				}
+			}
+			std::sort(shifts.begin(), shifts.end(), [](auto& left, auto& right) {
+				return left.second < right.second;
+			});
 		}
 		Position originVoxel = _save->getTileEngine()->getOriginVoxel(action, 0);
+		BattleUnit *baseTargetUnit = 0;
+		Tile *baseTile = _save->getTile(baseTarget);
+		if (baseTile)
+		{
+			baseTargetUnit = baseTile->getUnit();
+		}
+		bool grenadeSolvesBadDirectFire = false;
+		if (!proximity && baseTargetUnit && validTarget(baseTargetUnit, true, true))
+		{
+			BattleItem *directWeapon = selectBestCarriedWeapon();
+			if (directWeapon && directWeapon != grenade && directWeapon->getRules()->getBattleType() == BT_FIREARM)
+			{
+				BattleAction directAction;
+				directAction.actor = _unit;
+				directAction.weapon = directWeapon;
+				directAction.type = BA_SNAPSHOT;
+				directAction.target = baseTargetUnit->getPosition();
+				Position shotOrigin = _save->getTileEngine()->getOriginVoxel(directAction, 0);
+				Position shotTarget = baseTargetUnit->getPosition().toVoxel() + Position(8, 8, 10);
+				Tile *directTile = baseTargetUnit->getTile();
+				const bool directLine = directTile && _save->getTileEngine()->canTargetUnit(&shotOrigin, directTile, &shotTarget, _unit, false, baseTargetUnit);
+				BattleActionAttack directAttack = BattleActionAttack::GetBeforeShoot(directAction);
+				const int directPower = directAttack.damage_item ? std::max(0, directAttack.damage_item->getRules()->getPower()) : 0;
+				const int armor = std::max(std::max(baseTargetUnit->getArmor(SIDE_FRONT), baseTargetUnit->getArmor(SIDE_LEFT)), baseTargetUnit->getArmor(SIDE_RIGHT));
+				const bool weakDirectHit = directPower > 0 && (directPower + 20 < armor || (baseTargetUnit->getHealth() > 55 && directPower < armor + 35));
+				grenadeSolvesBadDirectFire = !directLine || projectileRiskyForAllies(&directAction, baseTargetUnit, false) || weakDirectHit;
+			}
+		}
 		for (auto& shift : shifts)
 		{
-			Position targetTile = action.target + shift.first;
-			Position targetVoxel = targetTile.toVoxel() + Position(8,8, (2 + -_save->getTile(targetTile)->getTerrainLevel()));
-			// are we within range?
+			Position targetTile = baseTarget + shift.first;
+			Tile *tile = _save->getTile(targetTile);
+			if (!tile)
+			{
+				continue;
+			}
+			Position targetVoxel = targetTile.toVoxel() + Position(8,8, (2 + -tile->getTerrainLevel()));
 			if (_save->getTileEngine()->validateThrow(action, originVoxel, targetVoxel, _save->getDepth()))
 			{
-				_attackAction.weapon = grenade;
-				_attackAction.target = targetTile;
-				_attackAction.type = BA_THROW;
-				_rifle = false;
-				_melee = false;
-				break;
+				int score = scorePlayerGrenadeTarget(grenade, targetTile, radius, proximity);
+				if (proximity)
+				{
+					score += 70;
+					score -= Position::distance2d(targetTile, _unit->getPosition()) * 2;
+					if (reason.find("room_entry") != std::string::npos)
+					{
+						score += 110;
+					}
+					else if (reason.find("hidden_contact") != std::string::npos)
+					{
+						score += 70;
+					}
+					if (getSpottingUnits(_unit->getPosition()) > 0 && score < 180)
+					{
+						score -= 45;
+					}
+				}
+				else
+				{
+					const int currentSpotters = getSpottingUnits(_unit->getPosition());
+					const int currentExposure = getEnemyFireExposure(_unit->getPosition());
+					if (grenadeSolvesBadDirectFire)
+					{
+						score += 110;
+					}
+					if (currentSpotters > 0 && score < 160)
+					{
+						score -= currentSpotters * (grenadeSolvesBadDirectFire ? 35 : 70);
+					}
+					if (currentExposure > 0 && score < 190)
+					{
+						score -= std::min(grenadeSolvesBadDirectFire ? 45 : 90, currentExposure / (grenadeSolvesBadDirectFire ? 4 : 2));
+					}
+				}
+				if (score > bestScore)
+				{
+					bestScore = score;
+					bestAction = action;
+					bestAction.target = targetTile;
+					bestReason = reason;
+				}
 			}
+		}
+	};
+
+	for (auto *item : *_unit->getInventory())
+	{
+		if (!item || !item->getRules()->isGrenadeOrProxy())
+		{
+			continue;
+		}
+		if (_aggroTarget && !_aggroTarget->isOut())
+		{
+			tryGrenadeTarget(item, _aggroTarget->getPosition(), "visible_or_assigned_target");
+		}
+		for (auto *bu : *_save->getUnits())
+		{
+			if (validTarget(bu, true, true) && bu->getTile() && _save->getTileEngine()->visible(_unit, bu->getTile()))
+			{
+				tryGrenadeTarget(item, bu->getPosition(), "visible_enemy_cluster");
+			}
+		}
+		if (_factionAI)
+		{
+			Position contactPos;
+			const BattleRoomInfo *room = 0;
+			int enemiesInRoom = 0;
+			bool visibleContact = false;
+			if (_factionAI->getBestEnemyContactPosition(&contactPos, &room, &enemiesInRoom, &visibleContact))
+			{
+				if (!visibleContact)
+				{
+					tryGrenadeTarget(item, contactPos, item->getRules()->getBattleType() == BT_PROXIMITYGRENADE ? "hidden_contact_sensor_grenade" : "hidden_contact_explosive");
+				}
+				if (room && item->getRules()->getBattleType() == BT_PROXIMITYGRENADE)
+				{
+					for (const auto &entry : room->entryPositions)
+					{
+						if (entry.z == _unit->getPosition().z && Position::distance2d(entry, _unit->getPosition()) <= 16)
+						{
+							tryGrenadeTarget(item, entry, "room_entry_sensor_grenade");
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (bestAction.type != BA_RETHINK && bestScore >= (bestAction.weapon->getRules()->getBattleType() == BT_PROXIMITYGRENADE ? 120 : 70))
+	{
+		_attackAction.weapon = bestAction.weapon;
+		_attackAction.target = bestAction.target;
+		_attackAction.type = BA_THROW;
+		_rifle = false;
+		_melee = false;
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction explosive action: unit=" << _unit->getId()
+				<< ", item=" << bestAction.weapon->getRules()->getType()
+				<< ", target=" << bestAction.target
+				<< ", score=" << bestScore
+				<< ", reason=" << bestReason
+				<< ", proximity=" << (bestAction.weapon->getRules()->getBattleType() == BT_PROXIMITYGRENADE);
+			_save->appendToAutoBattleLog(log.str());
+		}
+	}
+	else if (Options::autoBattleLog && bestAction.type != BA_RETHINK)
+	{
+		std::ostringstream log;
+		log << "Player faction explosive candidate rejected: unit=" << _unit->getId()
+			<< ", item=" << bestAction.weapon->getRules()->getType()
+			<< ", target=" << bestAction.target
+			<< ", score=" << bestScore
+			<< ", reason=" << bestReason
+			<< ", proximity=" << (bestAction.weapon->getRules()->getBattleType() == BT_PROXIMITYGRENADE);
+		_save->appendToAutoBattleLog(log.str());
+	}
+	else if (Options::autoBattleLog)
+	{
+		int carriedExplosives = 0;
+		for (auto *item : *_unit->getInventory())
+		{
+			if (item && item->getRules()->isGrenadeOrProxy())
+			{
+				++carriedExplosives;
+			}
+		}
+		if (carriedExplosives > 0)
+		{
+			std::ostringstream log;
+			log << "Player faction explosive no target: unit=" << _unit->getId()
+				<< ", carriedExplosives=" << carriedExplosives
+				<< ", aggroTarget=" << (_aggroTarget ? _aggroTarget->getId() : -1)
+				<< ", known=" << _knownEnemies
+				<< ", visible=" << _visibleEnemies
+				<< ", spotting=" << _spottingEnemies;
+			_save->appendToAutoBattleLog(log.str());
 		}
 	}
 }
