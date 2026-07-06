@@ -822,7 +822,9 @@ void FactionAI::buildPlayerPlan(BattleUnit *activeUnit) const
 			const int assignedCount = assignedCountByEnemyId[contact.enemy->getId()];
 			int maxAssignees = contact.visibleContact
 				? std::max(3, (int)contact.canShootBy.size() + std::max(0, (int)contact.visibleBy.size() - (int)contact.canShootBy.size()) / 2)
-				: (int)_playerPlan.allies.size();
+				: ((_playerPlan.enemies.size() == 1 || _save->getTurn() >= 16)
+					? (int)_playerPlan.allies.size()
+					: std::min((int)_playerPlan.allies.size(), (contact.canShootBy.empty() && contact.visibleBy.empty()) ? 3 : 5));
 			if (contact.visibleContact && (contact.threatScore >= 130 || contact.canShootBy.size() >= 2))
 			{
 				maxAssignees = std::max(maxAssignees, 5);

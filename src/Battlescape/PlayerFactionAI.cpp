@@ -54,6 +54,18 @@ struct PendingPlayerGrenadeDanger
 
 std::vector<PendingPlayerGrenadeDanger> pendingPlayerGrenadeDangers;
 
+struct PlayerMovementMemory
+{
+	SavedBattleGame *save;
+	int unitId;
+	Position previousPosition;
+	Position lastPosition;
+	int lastTurn;
+	int oscillation;
+};
+
+std::vector<PlayerMovementMemory> playerMovementMemory;
+
 void cleanupPendingPlayerGrenadeDangers(SavedBattleGame *save)
 {
 	if (!save)
@@ -104,6 +116,52 @@ void recordPendingPlayerGrenadeDanger(SavedBattleGame *save, UnitFaction faction
 	}
 	PendingPlayerGrenadeDanger danger = { save, save->getTurn(), faction, target, radius };
 	pendingPlayerGrenadeDangers.push_back(danger);
+}
+
+int updatePlayerMovementOscillation(SavedBattleGame *save, BattleUnit *unit)
+{
+	if (!save || !unit)
+	{
+		return 0;
+	}
+	const int turn = save->getTurn();
+	const Position pos = unit->getPosition();
+	for (auto &memory : playerMovementMemory)
+	{
+		if (memory.save == save && memory.unitId == unit->getId())
+		{
+			if (memory.lastTurn != turn)
+			{
+				memory.oscillation = std::max(0, memory.oscillation - 1);
+				memory.lastTurn = turn;
+			}
+			if (pos == memory.lastPosition)
+			{
+				memory.oscillation = std::max(0, memory.oscillation - 1);
+			}
+			else
+			{
+				if (pos == memory.previousPosition)
+				{
+					memory.oscillation += 2;
+				}
+				else
+				{
+					memory.oscillation = std::max(0, memory.oscillation - 1);
+				}
+				memory.previousPosition = memory.lastPosition;
+				memory.lastPosition = pos;
+			}
+			return memory.oscillation;
+		}
+	}
+	PlayerMovementMemory memory = { save, unit->getId(), pos, pos, turn, 0 };
+	playerMovementMemory.push_back(memory);
+	if (playerMovementMemory.size() > 512)
+	{
+		playerMovementMemory.erase(playerMovementMemory.begin(), playerMovementMemory.end() - 512);
+	}
+	return 0;
 }
 }
 
@@ -969,6 +1027,7 @@ void PlayerFactionAI::think(BattleAction *action)
 	_knownEnemies = countKnownTargets();
 	_visibleEnemies = selectNearestTarget();
 	_spottingEnemies = getSpottingUnits(_unit->getPosition());
+	const int movementOscillation = _unit->getFaction() == FACTION_PLAYER ? updatePlayerMovementOscillation(_save, _unit) : 0;
 	_melee = (_unit->getUtilityWeapon(BT_MELEE) != 0);
 	_rifle = false;
 	_blaster = false;
@@ -1723,6 +1782,29 @@ factionRoomTacticsDone:
 		break;
 	}
 
+	if (_unit->getFaction() == FACTION_PLAYER && !evacuatingGrenadeDanger && action->type == BA_WALK
+		&& !_visibleEnemies && !_spottingEnemies && movementOscillation >= (_knownEnemies ? 2 : 4))
+	{
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction anti-oscillation ambush: unit=" << _unit->getId()
+				<< ", position=" << _unit->getPosition()
+				<< ", rejectedTarget=" << action->target
+				<< ", oscillation=" << movementOscillation
+				<< ", known=" << _knownEnemies
+				<< ", visible=" << _visibleEnemies
+				<< ", spotting=" << _spottingEnemies
+				<< ", mode=" << _AIMode
+				<< ", reason=hold_reaction_instead_of_looping";
+			_save->appendToAutoBattleLog(log.str());
+		}
+		action->type = BA_NONE;
+		action->target = _unit->getPosition();
+		action->finalAction = true;
+		action->kneel = _unit->getArmor()->allowsKneeling(false);
+	}
+
 	if (_unit->getFaction() == FACTION_PLAYER && !evacuatingGrenadeDanger && action->type == BA_WALK && (_visibleEnemies || _spottingEnemies))
 	{
 		const bool firePointMove = _AIMode == AI_COMBAT
@@ -1754,6 +1836,8 @@ factionRoomTacticsDone:
 		const int targetSpotters = getSpottingUnits(action->target);
 		const int currentCover = defensiveCoverScore(_unit->getPosition());
 		const int targetCover = defensiveCoverScore(action->target);
+		const int currentExposure = getEnemyFireExposure(_unit->getPosition());
+		const int targetExposure = getEnemyFireExposure(action->target);
 		const int defensiveMoveDistance = Position::distance2d(action->target, _unit->getPosition());
 		int adjacentAllies = 0;
 		for (auto *other : *_save->getUnits())
@@ -1770,7 +1854,11 @@ factionRoomTacticsDone:
 		const bool saferSpottingMove = targetSpotters < _spottingEnemies && (targetCover >= currentCover || targetSpotters + 1 < _spottingEnemies || defensiveMoveDistance <= 2);
 		const bool betterCoverMove = targetSpotters <= _spottingEnemies && targetCover >= currentCover + 6;
 		const bool defensiveMove = defensiveMoveDistance <= 4 && adjacentAllies == 0 && (saferSpottingMove || betterCoverMove);
-		if (!firePointMove && !defensiveMove && !_fallbackCoverAction)
+		const bool firePointIntoDanger = firePointMove
+			&& (targetSpotters > 0 || targetExposure > currentExposure + 15)
+			&& !_fallbackCoverAction
+			&& !(defensiveMoveDistance <= 3 && targetSpotters <= _spottingEnemies && targetCover >= currentCover + 12 && targetExposure <= currentExposure + 30);
+		if ((!firePointMove || firePointIntoDanger) && !defensiveMove && !_fallbackCoverAction)
 		{
 			if (Options::autoBattleLog)
 			{
@@ -1782,8 +1870,12 @@ factionRoomTacticsDone:
 					<< ", targetSpotters=" << targetSpotters
 					<< ", currentCover=" << currentCover
 					<< ", targetCover=" << targetCover
+					<< ", currentExposure=" << currentExposure
+					<< ", targetExposure=" << targetExposure
 					<< ", moveDistance=" << defensiveMoveDistance
 					<< ", adjacentAllies=" << adjacentAllies
+					<< ", firePointMove=" << firePointMove
+					<< ", firePointIntoDanger=" << firePointIntoDanger
 					<< ", mode=" << _AIMode;
 				_save->appendToAutoBattleLog(log.str());
 			}
@@ -1977,12 +2069,18 @@ factionRoomTacticsDone:
 				}
 				const int contactDist = Position::distance2d(pos, contactPos);
 				const int targetDist = Position::distance2d(pos, action->target);
-				const bool progresses = contactDist < currentContactDist || targetDist < currentTargetDist;
-				if (!progresses && cautiousCoverScore(pos) < currentCover + 6)
+				const int cover = cautiousCoverScore(pos);
+				const bool progresses = visibleFactionContact
+					? (contactDist < currentContactDist || targetDist < currentTargetDist)
+					: (contactDist < currentContactDist);
+				if (!progresses && cover < currentCover + 6)
 				{
 					continue;
 				}
-				const int cover = cautiousCoverScore(pos);
+				if (!visibleFactionContact && contactDist > currentContactDist && cover < currentCover + 10)
+				{
+					continue;
+				}
 				const int spotters = getSpottingUnits(pos);
 				if (durableVisibleContact && activeHostiles > 8 && contactDist < 8 && cover < currentCover + 12)
 				{
@@ -1999,6 +2097,10 @@ factionRoomTacticsDone:
 				if (cover + 6 < currentCover && contactDist < currentContactDist)
 				{
 					score += 70;
+				}
+				if (!visibleFactionContact && contactDist > currentContactDist)
+				{
+					score += (contactDist - currentContactDist) * 60;
 				}
 				if (score < bestScore)
 				{
@@ -2041,6 +2143,30 @@ factionRoomTacticsDone:
 	{
 		// if we're moving, we'll have to re-evaluate our escape/ambush position.
 		if (action->target != _unit->getPosition())
+		{
+			const bool exhausted = (_unit->getEnergy() <= 0);
+			if (exhausted)
+			{
+				if (Options::autoBattleLog)
+				{
+					std::ostringstream log;
+					log << "Player faction invalid walk suppressed: unit=" << _unit->getId()
+						<< ", from=" << _unit->getPosition()
+						<< ", target=" << action->target
+						<< ", tu=" << _unit->getTimeUnits()
+						<< ", energy=" << _unit->getEnergy()
+						<< ", knownEnemies=" << _knownEnemies
+						<< ", visibleEnemies=" << _visibleEnemies
+						<< ", spottingEnemies=" << _spottingEnemies;
+					_save->appendToAutoBattleLog(log.str());
+				}
+				action->type = BA_NONE;
+				action->target = _unit->getPosition();
+				action->finalAction = true;
+				action->kneel = _unit->getArmor()->allowsKneeling(false);
+			}
+		}
+		if (action->type == BA_WALK && action->target != _unit->getPosition())
 		{
 			_escapeTUs = 0;
 			_ambushTUs = 0;
@@ -5847,11 +5973,11 @@ void PlayerFactionAI::grenadeAction()
 					}
 					if (currentSpotters > 0 && score < 160)
 					{
-						score -= currentSpotters * (grenadeSolvesBadDirectFire ? 35 : 70);
+						score -= currentSpotters * (grenadeSolvesBadDirectFire ? 15 : 35);
 					}
 					if (currentExposure > 0 && score < 190)
 					{
-						score -= std::min(grenadeSolvesBadDirectFire ? 45 : 90, currentExposure / (grenadeSolvesBadDirectFire ? 4 : 2));
+						score -= std::min(grenadeSolvesBadDirectFire ? 25 : 45, currentExposure / (grenadeSolvesBadDirectFire ? 6 : 4));
 					}
 				}
 				if (score > bestScore)
