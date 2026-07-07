@@ -34,10 +34,11 @@ namespace
 
 bool playerAIRoomActsOpen(const BattleRoomInfo &room)
 {
+	const bool hasControlledEntry = !room.entryPositions.empty() || room.doorCount + room.windowCount > 0;
 	return room.isOutside
 		|| room.isHall
-		|| room.tileCount > 60
-		|| room.openingCount > room.tileCount * 2
+		|| room.tileCount > 90
+		|| (!hasControlledEntry && room.openingCount > room.tileCount * 2)
 		|| (room.entryPositions.empty() && room.doorCount + room.windowCount == 0);
 }
 
@@ -338,7 +339,7 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 		{
 			return a.threatScore + a.focusScore > b.threatScore + b.focusScore;
 		});
-		const int hiddenLimit = std::min(1, (int)hiddenContacts.size());
+		const int hiddenLimit = std::min(3, (int)hiddenContacts.size());
 		for (int i = 0; i < hiddenLimit; ++i)
 		{
 			_plan.enemies.push_back(hiddenContacts[i]);
@@ -395,19 +396,25 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	const bool outnumbered = activeAllies > 0 && _plan.activeHostiles >= activeAllies + 2;
 	const bool openContacts = _plan.openAreaContacts > 0 || (_plan.enemies.empty() && _plan.hiddenContacts > 0);
 	const bool roomProblem = _plan.roomContacts > 0 && _plan.openAreaContacts == 0;
+	const bool dangerousRoomProblem = _plan.roomContacts > 0 && _plan.roomContacts >= _plan.openAreaContacts;
 	const bool squadBadlyExposed = _plan.exposedAllies >= std::max(2, activeAllies / 3);
 	const bool squadWoundedUnderContact = _plan.woundedAllies > 0 && _plan.exposedAllies > 0;
 	const bool lastEnemies = _plan.activeHostiles <= 2;
 	const bool lateHunt = _save->getTurn() >= 50 && activeAllies > 0 && _plan.activeHostiles <= std::max(3, activeAllies + 1);
-	const bool enableInitialDeployMode = false;
+	const bool earlyHiddenPressure = _save->getTurn() <= 2 && mostlyHidden && activeAllies >= 5 && _plan.activeHostiles > 2;
+	const bool realSurvivalPressure = activeAllies <= 3
+		|| (outnumbered && (_plan.visibleContacts > 0 || _plan.exposedAllies > 0 || _plan.woundedAllies >= std::max(2, activeAllies / 4)))
+		|| (_save->getTurn() > 2 && outnumbered && _plan.activeHostiles >= activeAllies + 5);
+	const bool enableInitialDeployMode = true;
 	if (enableInitialDeployMode
 		&& _save->getTurn() <= 2
 		&& activeAllies >= 5
 		&& _plan.activeHostiles > 2
-		&& _plan.activeHostiles <= activeAllies / 2 + 1
-		&& _plan.visibleContacts >= 2
+		&& _plan.activeHostiles <= activeAllies
 		&& _plan.hiddenContacts > 0
-		&& _plan.exposedAllies >= std::max(2, activeAllies / 4))
+		&& _plan.visibleContacts == 0
+		&& _plan.roomContacts == 0
+		&& _plan.exposedAllies <= std::max(2, activeAllies / 3))
 	{
 		_plan.strategy = PFS_INITIAL_DEPLOY;
 	}
@@ -419,9 +426,17 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	{
 		_plan.strategy = PFS_RETREAT_REGROUP;
 	}
-	else if (activeAllies <= 3 || outnumbered)
+	else if (realSurvivalPressure)
 	{
 		_plan.strategy = PFS_SURVIVE;
+	}
+	else if (dangerousRoomProblem && _plan.roomContacts >= 2 && (mostlyHidden || _plan.visibleContacts == 0))
+	{
+		_plan.strategy = PFS_SIEGE_ROOM;
+	}
+	else if (earlyHiddenPressure)
+	{
+		_plan.strategy = PFS_DEFEND_LINE;
 	}
 	else if (mostlyHidden && manyEnemies && openContacts)
 	{

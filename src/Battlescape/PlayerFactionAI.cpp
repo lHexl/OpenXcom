@@ -787,10 +787,10 @@ void PlayerFactionAI::applyFactionStrategyToModeOdds(PlayerFactionStrategy strat
 	switch (strategy)
 	{
 	case PFS_INITIAL_DEPLOY:
-		*escapeOdds = scale(*escapeOdds, 130);
-		*ambushOdds = scale(*ambushOdds, 185);
-		*combatOdds = scale(*combatOdds, 85);
-		*patrolOdds = scale(*patrolOdds, 25);
+		*escapeOdds = scale(*escapeOdds, 80);
+		*ambushOdds = scale(*ambushOdds, 230);
+		*combatOdds = scale(*combatOdds, 65);
+		*patrolOdds = scale(*patrolOdds, 18);
 		if (role == ROLE_MARKSMAN || role == ROLE_HEAVY)
 		{
 			*ambushOdds = scale(*ambushOdds, 125);
@@ -853,8 +853,8 @@ void PlayerFactionAI::applyFactionStrategyToModeOdds(PlayerFactionStrategy strat
 		}
 		break;
 	case PFS_SURVIVE:
-		*escapeOdds = scale(*escapeOdds, 230);
-		*ambushOdds = scale(*ambushOdds, 145);
+		*escapeOdds = scale(*escapeOdds, (_spottingEnemies || _visibleEnemies) ? 230 : 95);
+		*ambushOdds = scale(*ambushOdds, (_spottingEnemies || _visibleEnemies) ? 145 : 220);
 		*combatOdds = scale(*combatOdds, 50);
 		*patrolOdds = 0;
 		if (role == ROLE_SUPPORT || role == ROLE_HEAVY)
@@ -877,10 +877,10 @@ void PlayerFactionAI::applyFactionStrategyToModeOdds(PlayerFactionStrategy strat
 		}
 		break;
 	case PFS_HUNT_LAST_ENEMY:
-		*escapeOdds = scale(*escapeOdds, 60);
-		*ambushOdds = scale(*ambushOdds, 70);
-		*combatOdds = scale(*combatOdds, 155);
-		*patrolOdds = scale(*patrolOdds, 135);
+		*escapeOdds = scale(*escapeOdds, 70);
+		*ambushOdds = scale(*ambushOdds, (_visibleEnemies || _knownEnemies <= 1) ? 120 : 160);
+		*combatOdds = scale(*combatOdds, _visibleEnemies ? 145 : 90);
+		*patrolOdds = scale(*patrolOdds, _visibleEnemies ? 90 : 65);
 		if (role == ROLE_ASSAULT || role == ROLE_MELEE)
 		{
 			*patrolOdds = scale(*patrolOdds, 115);
@@ -1649,8 +1649,9 @@ void PlayerFactionAI::think(BattleAction *action)
 			const int roomSize = contactRoom ? contactRoom->tileCount : 1;
 			const int roomEntries = contactRoom ? (int)contactRoom->entryPositions.size() : 0;
 			const int unitRoomId = _factionAI->getRoomIdAt(_unit->getPosition());
+			const bool contactHasControlledEntry = contactRoom && (roomEntries > 0 || contactRoom->doorCount + contactRoom->windowCount > 0);
 			const bool brokenRoom = contactRoom && !contactRoom->isOutside && !contactRoom->isHall
-				&& (contactRoom->tileCount > 60 || contactRoom->openingCount > contactRoom->tileCount * 2 || (roomEntries == 0 && contactRoom->doorCount + contactRoom->windowCount == 0));
+				&& (contactRoom->tileCount > 90 || (!contactHasControlledEntry && contactRoom->openingCount > contactRoom->tileCount * 2) || (roomEntries == 0 && contactRoom->doorCount + contactRoom->windowCount == 0));
 			const bool smallDangerRoom = contactRoom && !contactRoom->isOutside && !contactRoom->isHall && !brokenRoom;
 			const bool riskyRoom = smallDangerRoom && (enemiesInRoom > 1 || contactRoom->tileCount > 16 || contactRoom->doorCount + contactRoom->windowCount <= 2);
 			const bool insideDangerRoom = riskyRoom && unitRoomId == contactRoom->id;
@@ -3072,7 +3073,13 @@ void PlayerFactionAI::setupAttack()
 	else if (_unit->getFaction() == FACTION_PLAYER && _factionAI)
 	{
 		BattleUnit *assignedTarget = _factionAI->getAssignedTarget(_unit);
-		if (assignedTarget && !assignedTarget->isOut() && _rifle)
+		const PlayerFactionStrategy strategy = getFactionStrategy();
+		const bool defensiveHiddenContact = strategy == PFS_INITIAL_DEPLOY
+			|| strategy == PFS_DEFEND_LINE
+			|| strategy == PFS_SIEGE_ROOM
+			|| strategy == PFS_HOLD_REACTION
+			|| strategy == PFS_SURVIVE;
+		if (assignedTarget && !assignedTarget->isOut() && _rifle && (!defensiveHiddenContact || _visibleEnemies > 0 || _spottingEnemies > 0))
 		{
 			_aggroTarget = assignedTarget;
 			if (!_attackAction.weapon)
@@ -3145,8 +3152,9 @@ bool PlayerFactionAI::setupFactionStalkAmbush(const Position &contactPos, const 
 	const int currentDist = Position::distance2d(_unit->getPosition(), contactPos);
 	const int roomSize = contactRoom ? contactRoom->tileCount : 1;
 	const int roomEntries = contactRoom ? (int)contactRoom->entryPositions.size() : 0;
+	const bool contactHasControlledEntry = contactRoom && (roomEntries > 0 || contactRoom->doorCount + contactRoom->windowCount > 0);
 	const bool brokenRoom = contactRoom && !contactRoom->isOutside && !contactRoom->isHall
-		&& (contactRoom->tileCount > 60 || contactRoom->openingCount > contactRoom->tileCount * 2 || (roomEntries == 0 && contactRoom->doorCount + contactRoom->windowCount == 0));
+		&& (contactRoom->tileCount > 90 || (!contactHasControlledEntry && contactRoom->openingCount > contactRoom->tileCount * 2) || (roomEntries == 0 && contactRoom->doorCount + contactRoom->windowCount == 0));
 	const bool smallDangerRoom = contactRoom && !contactRoom->isOutside && !contactRoom->isHall && !brokenRoom;
 	const bool riskyRoom = smallDangerRoom && (enemiesInRoom > 1 || contactRoom->tileCount > 16 || contactRoom->doorCount + contactRoom->windowCount <= 2);
 	const bool rangedAmbush = _rifle || _blaster || (_grenade && !_melee);
@@ -4540,11 +4548,19 @@ void PlayerFactionAI::evaluateAIMode()
 		const PlayerFactionStrategy strategy = getFactionStrategy();
 		const bool badlyWounded = _unit->getHealth() < std::max(1, _unit->getBaseStats()->health / 2);
 		const bool usefulAttack = _attackAction.type != BA_RETHINK;
+		int activeAllies = 0;
+		for (auto *other : *_save->getUnits())
+		{
+			if (other && !other->isOut() && other->getFaction() == _unit->getFaction())
+			{
+				++activeAllies;
+			}
+		}
 		if ((strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP) && _escapeTUs && (_spottingEnemies || badlyWounded || !usefulAttack))
 		{
 			_AIMode = AI_ESCAPE;
 		}
-		else if ((strategy == PFS_DEFEND_LINE || strategy == PFS_SIEGE_ROOM || strategy == PFS_HOLD_REACTION) && _ambushTUs && !_visibleEnemies)
+		else if ((strategy == PFS_INITIAL_DEPLOY || strategy == PFS_DEFEND_LINE || strategy == PFS_SIEGE_ROOM || strategy == PFS_HOLD_REACTION) && _ambushTUs && !_visibleEnemies)
 		{
 			_AIMode = AI_AMBUSH;
 		}
@@ -4552,9 +4568,36 @@ void PlayerFactionAI::evaluateAIMode()
 		{
 			_AIMode = AI_COMBAT;
 		}
+		else if (strategy == PFS_HUNT_LAST_ENEMY && !_visibleEnemies && _ambushTUs && (activeAllies <= 3 || badlyWounded))
+		{
+			_AIMode = AI_AMBUSH;
+		}
 		else if (strategy == PFS_HUNT_LAST_ENEMY && !_visibleEnemies && _AIMode == AI_ESCAPE && !badlyWounded && !_spottingEnemies)
 		{
 			_AIMode = _toNode || _foundBaseModuleToDestroy ? AI_PATROL : AI_AMBUSH;
+		}
+		if (!_visibleEnemies
+			&& !_spottingEnemies
+			&& (strategy == PFS_INITIAL_DEPLOY
+				|| strategy == PFS_HOLD_REACTION
+				|| (_save->getTurn() <= 2 && (strategy == PFS_DEFEND_LINE || strategy == PFS_SIEGE_ROOM)))
+			&& !_factionSupportMoveAction
+			&& !_stalkAmbushAction
+			&& !_cleanShotMoveAction
+			&& _attackAction.type != BA_THROW)
+		{
+			_AIMode = _ambushTUs ? AI_AMBUSH : AI_ESCAPE;
+			_attackAction.type = BA_RETHINK;
+			if (Options::autoBattleLog)
+			{
+				std::ostringstream log;
+				log << "Player faction patrol suppressed: unit=" << _unit->getId()
+					<< ", strategy=" << getFactionStrategyName(strategy)
+					<< ", oldPatrolTarget=" << (_toNode ? _toNode->getPosition() : _patrolAction.target)
+					<< ", ambushTUs=" << _ambushTUs
+					<< ", escapeTUs=" << _escapeTUs;
+				_save->appendToAutoBattleLog(log.str());
+			}
 		}
 		if (Options::autoBattleLog)
 		{
@@ -4742,11 +4785,41 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 	const int currentExposure = getEnemyFireExposure(_unit->getPosition());
 	const int currentDist = Position::distance2d(_unit->getPosition(), target->getPosition());
 	const bool meleeRole = role == ROLE_MELEE || _attackAction.weapon->getRules()->getBattleType() == BT_MELEE;
+	const PlayerFactionStrategy strategy = getFactionStrategy();
+	int activeAllies = 0;
+	int activeHostiles = 0;
+	if (_unit->getFaction() == FACTION_PLAYER)
+	{
+		for (auto *other : *_save->getUnits())
+		{
+			if (!other || other->isOut())
+			{
+				continue;
+			}
+			if (other->getFaction() == _unit->getFaction())
+			{
+				++activeAllies;
+			}
+			else if (other->getFaction() == FACTION_HOSTILE)
+			{
+				++activeHostiles;
+			}
+		}
+	}
 	int bestScore = -100000;
 	Position bestPos = _unit->getPosition();
 	int bestSpotters = currentSpotters;
 	int bestDist = currentDist;
 	const bool targetVisible = target->getTile() && _save->getTileEngine()->visible(_unit, target->getTile());
+	const bool defensiveHiddenContact = !targetVisible
+		&& (strategy == PFS_INITIAL_DEPLOY
+			|| strategy == PFS_DEFEND_LINE
+			|| strategy == PFS_SIEGE_ROOM
+			|| strategy == PFS_HOLD_REACTION
+			|| strategy == PFS_SURVIVE);
+	const bool cautiousLastEnemyHunt = strategy == PFS_HUNT_LAST_ENEMY
+		&& !targetVisible
+		&& (activeAllies <= 3 || _unit->getHealth() < _unit->getBaseStats()->health || currentDist > 18);
 
 	const std::vector<int> &reachableTiles = _reachableWithAttack.empty() ? _reachable : _reachableWithAttack;
 	for (auto tileIndex : reachableTiles)
@@ -4878,6 +4951,21 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 		{
 			score += 20;
 		}
+		if (defensiveHiddenContact || cautiousLastEnemyHunt)
+		{
+			const bool improvesSafety = spotters < currentSpotters || exposure + 25 < currentExposure || cover >= 8;
+			const bool keepsDistance = meleeRole || dist >= std::max(4, currentDist - (cautiousLastEnemyHunt ? 1 : 2));
+			if (!improvesSafety || !keepsDistance)
+			{
+				continue;
+			}
+			score -= moveDistance * 12;
+			score += cover * 4;
+			if (spotters == 0)
+			{
+				score += 35;
+			}
+		}
 		if (score > bestScore)
 		{
 			bestScore = score;
@@ -4887,7 +4975,8 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 		}
 	}
 
-	if (bestScore <= 90 || bestPos == _unit->getPosition())
+	const int requiredScore = (defensiveHiddenContact || cautiousLastEnemyHunt) ? 135 : 90;
+	if (bestScore <= requiredScore || bestPos == _unit->getPosition())
 	{
 		if (Options::autoBattleLog)
 		{
@@ -4898,7 +4987,11 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 				<< ", bestPos=" << bestPos
 				<< ", current=" << _unit->getPosition()
 				<< ", reachable=" << _reachable.size()
-				<< ", reachableWithAttack=" << _reachableWithAttack.size();
+				<< ", reachableWithAttack=" << _reachableWithAttack.size()
+				<< ", strategy=" << getFactionStrategyName(strategy)
+				<< ", requiredScore=" << requiredScore
+				<< ", defensiveHiddenContact=" << defensiveHiddenContact
+				<< ", cautiousLastEnemyHunt=" << cautiousLastEnemyHunt;
 			_save->appendToAutoBattleLog(log.str());
 		}
 		return false;
@@ -6395,7 +6488,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			{
 				continue;
 			}
-			if (Position::distance2d(ally->getPosition(), stagedTarget) <= stagedRadius + 3)
+			if (Position::distance2d(ally->getPosition(), stagedTarget) <= stagedRadius + 1)
 			{
 				blocked = true;
 				break;
@@ -6510,8 +6603,8 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 	}
 	const int entries = (int)room->entryPositions.size();
 	const bool mineableRoom = !room->isOutside
-		&& ((!room->isHall && room->tileCount <= 120 && entries > 0 && entries <= 24)
-			|| (room->isHall && room->tileCount <= 40 && entries > 0 && entries <= 12));
+		&& ((!room->isHall && room->tileCount <= 160 && entries > 0 && entries <= 32)
+			|| (room->isHall && room->tileCount <= 80 && entries > 0 && entries <= 18));
 	if (visibleContact || _visibleEnemies > 0)
 	{
 		logSkip("visible_contact", contactPos, room, enemiesInRoom);
@@ -6542,13 +6635,17 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			}
 		}
 	}
-	const bool fieldMine = !mineableRoom && bestAllyDistance >= 10 && bestAllyDistance <= 26 && contactThreat >= 145;
+	const bool fieldMine = !mineableRoom && bestAllyDistance >= 8 && bestAllyDistance <= 30 && contactThreat >= 120;
 	if (!mineableRoom && !fieldMine)
 	{
 		logSkip("room_not_mineable", contactPos, room, enemiesInRoom);
 		return false;
 	}
-	bool mineWorthyContact = enemiesInRoom >= 2 || entries <= 2 || contactHealth >= 100 || contactArmor >= std::max(0, carriedMine->getRules()->getPower()) || contactThreat >= (fieldMine ? 145 : 190);
+	bool mineWorthyContact = enemiesInRoom >= 2
+		|| entries <= 3
+		|| contactHealth >= 80
+		|| contactArmor >= std::max(0, carriedMine->getRules()->getPower() * 2 / 3)
+		|| contactThreat >= (fieldMine ? 120 : 145);
 	if (!mineWorthyContact)
 	{
 		logSkip("low_value_contact", contactPos, room, enemiesInRoom);
@@ -6620,7 +6717,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			{
 				continue;
 			}
-			if (Position::distance2d(ally->getPosition(), pos) <= radius + 3)
+			if (Position::distance2d(ally->getPosition(), pos) <= radius + 1)
 			{
 				return true;
 			}
@@ -6811,9 +6908,9 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 		}
 	}
 
-	if (bestAction.type == BA_RETHINK || bestScore < 170)
+	if (bestAction.type == BA_RETHINK || bestScore < 140)
 	{
-		if (bestStageMine && bestStageScore >= 175 && !_reachable.empty())
+		if (bestStageMine && bestStageScore >= 145 && !_reachable.empty())
 		{
 			auto coverScoreAt = [&](const Position &pos) -> int
 			{
@@ -6895,7 +6992,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 					bestStageMoveTU = moveTU;
 				}
 			}
-			if (bestStageMoveScore >= 190)
+			if (bestStageMoveScore >= 165)
 			{
 				_attackAction.actor = _unit;
 				_attackAction.weapon = selectBestCarriedWeapon();
@@ -6903,6 +7000,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 				_attackAction.type = BA_WALK;
 				_attackAction.finalFacing = _save->getTileEngine()->getDirectionTo(bestStagePos, contactPos);
 				_AIMode = AI_COMBAT;
+				_factionSupportMoveAction = true;
 				recordPlayerProximityMineStaging(_save, _unit, _unit->getFaction(), contactPos, bestStageMineTarget);
 				if (Options::autoBattleLog)
 				{
