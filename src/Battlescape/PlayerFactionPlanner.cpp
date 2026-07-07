@@ -292,6 +292,8 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 		contact.roomHall = false;
 		contact.enemiesInRoom = 1;
 		contact.visibleContact = false;
+		contact.threatensAllies = 0;
+		contact.canShootAllies = 0;
 		if (const BattleRoomInfo *room = _factionAI->getRoomInfoAt(enemy->getPosition()))
 		{
 			contact.roomSize = room->tileCount;
@@ -310,6 +312,14 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 				if (canShootEnemy(ally, enemy))
 				{
 					contact.canShootBy.push_back(ally);
+				}
+			}
+			if (canSeeEnemy(enemy, ally))
+			{
+				++contact.threatensAllies;
+				if (canShootEnemy(enemy, ally))
+				{
+					++contact.canShootAllies;
 				}
 			}
 		}
@@ -526,6 +536,8 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 				<< ", hall=" << bestContact->roomHall
 				<< ", visibleBy=" << bestContact->visibleBy.size()
 				<< ", canShootBy=" << bestContact->canShootBy.size()
+				<< ", threatensAllies=" << bestContact->threatensAllies
+				<< ", canShootAllies=" << bestContact->canShootAllies
 				<< ", visibleContact=" << bestContact->visibleContact
 				<< ", assignedCount=" << assignedCountByEnemyId[bestContact->enemy->getId()];
 			_plan.assignmentReasonByUnitId[ally->getId()] = reason.str();
@@ -573,7 +585,9 @@ void PlayerFactionPlanner::logPlan() const
 			<< ", hall=" << contact.roomHall
 			<< ", visibleContact=" << contact.visibleContact
 			<< ", visibleBy=" << contact.visibleBy.size()
-			<< ", canShootBy=" << contact.canShootBy.size();
+			<< ", canShootBy=" << contact.canShootBy.size()
+			<< ", threatensAllies=" << contact.threatensAllies
+			<< ", canShootAllies=" << contact.canShootAllies;
 		_save->appendToAutoBattleLog(line.str());
 	}
 	for (auto* ally : _plan.allies)

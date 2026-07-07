@@ -265,6 +265,7 @@ void createAdvancedOptionsOXC()
 	_info.push_back(OptionInfo(OPTION_OXCE, "autoBattleSeed", &autoBattleSeed, ""));
 	_info.push_back(OptionInfo(OPTION_OXCE, "autoQuitAfterBattle", &autoQuitAfterBattle, false));
 	_info.push_back(OptionInfo(OPTION_OXCE, "autoBattleLog", &autoBattleLog, false));
+	_info.push_back(OptionInfo(OPTION_OXCE, "autoBattleDisablePlayerPanic", &autoBattleDisablePlayerPanic, false));
 	_info.push_back(OptionInfo(OPTION_OXC, "battleSmoothCamera", &battleSmoothCamera, false, "STR_BATTLESMOOTHCAMERA", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo(OPTION_OXC, "disableAutoEquip", &disableAutoEquip, false, "STR_DISABLEAUTOEQUIP", "STR_BATTLESCAPE"));
 #ifdef __MOBILE__

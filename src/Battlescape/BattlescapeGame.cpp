@@ -1652,6 +1652,33 @@ bool BattlescapeGame::checkReservedTU(BattleUnit *bu, int tu, int energy, bool j
  */
 bool BattlescapeGame::handlePanickingPlayer()
 {
+	if (Options::autoBattle && Options::autoBattleDisablePlayerPanic)
+	{
+		for (auto* bu : *_save->getUnits())
+		{
+			if (bu->getFaction() != FACTION_PLAYER || bu->getOriginalFaction() != FACTION_PLAYER)
+			{
+				continue;
+			}
+			UnitStatus status = bu->getStatus();
+			if (status != STATUS_PANICKING && status != STATUS_BERSERK)
+			{
+				continue;
+			}
+			if (Options::autoBattleLog)
+			{
+				std::ostringstream log;
+				log << "Player panic suppressed for autobattle: unit=" << bu->getId()
+					<< ", status=" << (status == STATUS_BERSERK ? "berserk" : "panic")
+					<< ", morale=" << bu->getMorale()
+					<< ", position=" << bu->getPosition();
+				_save->appendToAutoBattleLog(log.str());
+			}
+			bu->abortTurn();
+			bu->moraleChange(+15);
+		}
+		return true;
+	}
 	for (auto* bu : *_save->getUnits())
 	{
 		if (bu->getFaction() == FACTION_PLAYER &&

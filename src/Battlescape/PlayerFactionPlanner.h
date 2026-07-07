@@ -54,6 +54,8 @@ struct PlayerFactionEnemyContact
 	bool roomHall;
 	int enemiesInRoom;
 	bool visibleContact;
+	int threatensAllies;
+	int canShootAllies;
 };
 
 struct PlayerFactionPlan

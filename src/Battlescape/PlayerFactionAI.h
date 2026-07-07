@@ -21,6 +21,7 @@
 #include "AIModule.h"
 #include "Position.h"
 #include "../Savegame/BattleUnit.h"
+#include <string>
 #include <vector>
 
 
@@ -49,6 +50,13 @@ private:
 		ROLE_MARKSMAN,
 		ROLE_HEAVY,
 		ROLE_MELEE
+	};
+	enum PlayerAITacticalRole
+	{
+		TACTICAL_SCOUT,
+		TACTICAL_REACTION_GUARD,
+		TACTICAL_FIRE_SUPPORT,
+		TACTICAL_ASSAULT
 	};
 
 	SavedBattleGame *_save;
@@ -81,6 +89,8 @@ private:
 	bool setupProximityMineAmbush();
 	PlayerAIRole getPlayerAIRole(BattleItem *weapon) const;
 	const char *getPlayerAIRoleName(PlayerAIRole role) const;
+	PlayerAITacticalRole getPlayerTacticalRole(BattleItem *weapon, PlayerAIRole role) const;
+	const char *getPlayerTacticalRoleName(PlayerAITacticalRole role) const;
 	PlayerFactionStrategy getFactionStrategy() const;
 	const char *getFactionStrategyName(PlayerFactionStrategy strategy) const;
 	void applyFactionStrategyToModeOdds(PlayerFactionStrategy strategy, PlayerAIRole role, int *escapeOdds, int *ambushOdds, int *combatOdds, int *patrolOdds) const;
@@ -118,7 +128,7 @@ public:
 	/// Gets current AI mode.
 	int getAIMode() const { return _AIMode; }
 	/// Gets known enemy count.
-	int getKnownEnemies() const { return _knownEnemies; }
+	int getKnownEnemies() const { return _knownEnemies < 0 ? 0 : _knownEnemies; }
 	/// Gets visible enemy count.
 	int getVisibleEnemies() const { return _visibleEnemies; }
 	/// Gets how many enemies are spotting this unit.
@@ -138,6 +148,8 @@ public:
 	/// count how many known XCom units are able to see this unit.
 	int getSpottingUnits(const Position& pos) const;
 	int getEnemyFireExposure(const Position& pos) const;
+	int countEnemyFireLines(const Position& pos) const;
+	bool hasSafeRetreatFromFirePosition(const Position& firePos, int maxRetreatTU) const;
 	int scoreTargetPriority(BattleUnit *target, bool assigned, bool visible, int distance) const;
 	int estimateDirectShotDamage(BattleAction *action, BattleUnit *target, int accuracy, int shots) const;
 	/// Selects the nearest target we can see, and return the number of viable targets.
@@ -159,9 +171,9 @@ public:
 	bool setupCleanShotMove(BattleUnit *target);
 	bool setupFallbackCoverMove(int minScore = 45, int minExposureGain = 0, int minSpotterGain = 0, int minCoverGain = 0);
 	/// Decides if we should throw a grenade/launch a missile to this position.
-	int scorePlayerGrenadeTarget(BattleItem *grenade, const Position &targetPos, int radius, bool proximity) const;
+	int scorePlayerGrenadeTarget(BattleItem *grenade, const Position &targetPos, int radius, bool proximity, std::string *rejectReason = 0) const;
 	int explosiveEfficacy(Position targetPos, BattleUnit *attackingUnit, int radius, int diff, bool grenade = false) const;
-	bool explosiveProjectileRiskyForAllies(BattleAction *action, int radius, const Position *originPosition = 0, bool logRejection = true) const;
+	bool explosiveProjectileRiskyForAllies(BattleAction *action, int radius, const Position *originPosition = 0, bool logRejection = true, std::string *rejectReason = 0, bool *hardReject = 0) const;
 	bool directProjectileRiskyForAllies(BattleAction *action, BattleUnit *target, bool logRejection = true) const;
 	bool autoShotRiskyForAllies(BattleAction *action, BattleUnit *target, bool logRejection = true) const;
 	bool projectileRiskyForAllies(BattleAction *action, BattleUnit *target, bool logRejection = true) const;
@@ -177,7 +189,7 @@ public:
 	/// Chooses a firing mode for the AI based on expected number of hits per turn
 	void extendedFireModeChoice(BattleActionCost& costAuto, BattleActionCost& costSnap, BattleActionCost& costAimed, BattleActionCost& costThrow, bool checkLOF = false);
 	/// Attempts to throw a grenade at an enemy (or group of enemies) we can see.
-	void grenadeAction();
+	void grenadeAction(int minScore = 70, bool teamSpotted = false);
 	/// Performs a psionic attack.
 	bool psiAction();
 	/// Performs a melee attack action.

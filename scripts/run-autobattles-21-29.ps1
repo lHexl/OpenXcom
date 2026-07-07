@@ -36,6 +36,7 @@ $jobs = foreach ($save in $saves) {
                 '-autoBattle', 'true',
                 '-autoQuitAfterBattle', 'true',
                 '-autoBattleLog', 'true',
+                '-autoBattleDisablePlayerPanic', 'true',
                 '-autoBattleSeed', "$seed"
             )
 
@@ -98,6 +99,16 @@ foreach ($result in ($results | Sort-Object Save, Run)) {
         if ($result.ExitCode -ne 0) {
             $failed = $true
         }
+    }
+}
+
+$analyzer = Join-Path $PSScriptRoot 'analyze-autobattle-logs.ps1'
+if (Test-Path -LiteralPath $analyzer) {
+    $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($pwsh) {
+        & $pwsh.Source -NoProfile -ExecutionPolicy Bypass -File $analyzer -LogDir $openxcomUser
+    } else {
+        & $analyzer -LogDir $openxcomUser
     }
 }
 
