@@ -43,6 +43,10 @@ $rows = foreach ($file in $logs) {
 	$firstTurnThrow = 0
 	$firstTurnSupport = 0
 	$firstTurnStagingHold = 0
+	$playerAimed = 0
+	$playerSnap = 0
+	$playerAuto = 0
+	$playerThrow = 0
 	$firstTurnStrategies = @{}
 	$firstTurnExamples = New-Object System.Collections.Generic.List[string]
 
@@ -67,6 +71,15 @@ $rows = foreach ($file in $logs) {
 				if ($firstTurnExamples.Count -lt 6) {
 					$firstTurnExamples.Add($line)
 				}
+			}
+		}
+		if ($line -match 'AI decision: unit #(\d+)') {
+			$unitId = [int]$Matches[1]
+			if ($unitId -lt 100000) {
+				if ($line -match 'chose aimed shot') { $playerAimed++ }
+				elseif ($line -match 'chose snap shot') { $playerSnap++ }
+				elseif ($line -match 'chose auto shot') { $playerAuto++ }
+				elseif ($line -match 'chose throw') { $playerThrow++ }
 			}
 		}
 		if ($currentTurn -eq 1 -and $line -match 'Player faction support move: unit=(\d+)') {
@@ -107,16 +120,33 @@ $rows = foreach ($file in $logs) {
 		FirstThrow = $firstTurnThrow
 		FirstSupport = $firstTurnSupport
 		FirstStagingHold = $firstTurnStagingHold
+		PlayerAimed = $playerAimed
+		PlayerSnap = $playerSnap
+		PlayerAuto = $playerAuto
+		PlayerThrow = $playerThrow
 		FirstStrategies = $strategySummary
 		CautiousPatrol = ([regex]::Matches($text, 'Player faction cautious patrol step')).Count
 		SupportMove = ([regex]::Matches($text, 'Player faction support move')).Count
 		StagingHold = ([regex]::Matches($text, 'Player faction staging reserve hold')).Count
+		InitialDeploymentHold = ([regex]::Matches($text, 'Player faction initial deployment hold')).Count
+		SiegeDispersion = ([regex]::Matches($text, 'Player faction siege landing dispersion allowed')).Count
+		ClusterBreak = ([regex]::Matches($text, 'Player faction heavy landing cluster break')).Count
 		CleanMove = ([regex]::Matches($text, 'Player faction clean shot move:')).Count
+		BlastClearance = ([regex]::Matches($text, 'Player faction blast clearance move')).Count
+		CleanLoopHold = ([regex]::Matches($text, 'Player faction clean shot loop hold')).Count
+		CombatLoopHold = ([regex]::Matches($text, 'Player faction combat loop hold')).Count
+		CombatLoopFallback = ([regex]::Matches($text, 'Player faction combat loop fallback')).Count
 		CleanReject = ([regex]::Matches($text, 'Player faction clean shot move rejected')).Count
 		Fallback = ([regex]::Matches($text, 'Player faction fallback cover move')).Count
+		FallbackLoopHold = ([regex]::Matches($text, 'Player faction fallback loop hold')).Count
+		HiddenSpotterFallback = ([regex]::Matches($text, 'Player faction hidden spotter fallback')).Count
 		LineBreak = ([regex]::Matches($text, 'hit-and-run line break')).Count
+		PreserveExplosive = ([regex]::Matches($text, 'Player faction preserve explosive turn')).Count
 		PanicSuppressed = ([regex]::Matches($text, 'Player panic suppressed for autobattle')).Count
 		ProximityMine = ([regex]::Matches($text, 'proximity mine ambush|proximity mine staged placement|Player faction explosive action:.*proximity=1')).Count
+		FieldMine = ([regex]::Matches($text, 'Player faction proximity mine (ambush|staging):.*fieldMine=1')).Count
+		FieldMineDiagnostics = ([regex]::Matches($text, 'Player faction proximity mine diagnostics:.*fieldMine=1')).Count
+		HiddenExplosive = ([regex]::Matches($text, 'Player faction explosive action:.*hidden_contact_explosive')).Count
 		ProximityStage = ([regex]::Matches($text, 'proximity mine staging')).Count
 		ProximityBlocked = ([regex]::Matches($text, 'proximity mine staged placement blocked')).Count
 		ExplosiveAction = ([regex]::Matches($text, 'Player faction explosive action:')).Count
@@ -132,7 +162,7 @@ $rows = foreach ($file in $logs) {
 }
 
 Write-Host "=== OVERALL ==="
-$rows | Sort-Object Save, Run | Format-Table Save,Run,Outcome,Score,Turn,Deaths,AlienKills,FirstIdle,FirstWalk,FirstShot,FirstThrow,FirstSupport,FirstStagingHold,CautiousPatrol,SupportMove,StagingHold,CleanMove,LineBreak,PanicSuppressed,ExplosiveAction,TeamExplosive -AutoSize
+$rows | Sort-Object Save, Run | Format-Table Save,Run,Outcome,Score,Turn,Deaths,AlienKills,FirstIdle,FirstWalk,FirstShot,FirstThrow,PlayerAimed,PlayerSnap,PlayerAuto,PlayerThrow,FirstSupport,FirstStagingHold,CautiousPatrol,SupportMove,StagingHold,InitialDeploymentHold,ClusterBreak,CleanMove,BlastClearance,LineBreak,PanicSuppressed,ExplosiveAction,TeamExplosive -AutoSize
 
 Write-Host ""
 Write-Host "=== SUMMARY ==="
@@ -150,15 +180,32 @@ Write-Host "=== SUMMARY ==="
 	FirstThrow = ($rows | Measure-Object FirstThrow -Sum).Sum
 	FirstSupport = ($rows | Measure-Object FirstSupport -Sum).Sum
 	FirstStagingHold = ($rows | Measure-Object FirstStagingHold -Sum).Sum
+	PlayerAimed = ($rows | Measure-Object PlayerAimed -Sum).Sum
+	PlayerSnap = ($rows | Measure-Object PlayerSnap -Sum).Sum
+	PlayerAuto = ($rows | Measure-Object PlayerAuto -Sum).Sum
+	PlayerThrow = ($rows | Measure-Object PlayerThrow -Sum).Sum
 	CautiousPatrol = ($rows | Measure-Object CautiousPatrol -Sum).Sum
 	SupportMove = ($rows | Measure-Object SupportMove -Sum).Sum
 	StagingHold = ($rows | Measure-Object StagingHold -Sum).Sum
+	InitialDeploymentHold = ($rows | Measure-Object InitialDeploymentHold -Sum).Sum
+	SiegeDispersion = ($rows | Measure-Object SiegeDispersion -Sum).Sum
+	ClusterBreak = ($rows | Measure-Object ClusterBreak -Sum).Sum
 	CleanMove = ($rows | Measure-Object CleanMove -Sum).Sum
+	BlastClearance = ($rows | Measure-Object BlastClearance -Sum).Sum
+	CleanLoopHold = ($rows | Measure-Object CleanLoopHold -Sum).Sum
+	CombatLoopHold = ($rows | Measure-Object CombatLoopHold -Sum).Sum
+	CombatLoopFallback = ($rows | Measure-Object CombatLoopFallback -Sum).Sum
 	CleanReject = ($rows | Measure-Object CleanReject -Sum).Sum
 	Fallback = ($rows | Measure-Object Fallback -Sum).Sum
+	FallbackLoopHold = ($rows | Measure-Object FallbackLoopHold -Sum).Sum
+	HiddenSpotterFallback = ($rows | Measure-Object HiddenSpotterFallback -Sum).Sum
 	LineBreak = ($rows | Measure-Object LineBreak -Sum).Sum
+	PreserveExplosive = ($rows | Measure-Object PreserveExplosive -Sum).Sum
 	PanicSuppressed = ($rows | Measure-Object PanicSuppressed -Sum).Sum
 	ProximityMine = ($rows | Measure-Object ProximityMine -Sum).Sum
+	FieldMine = ($rows | Measure-Object FieldMine -Sum).Sum
+	FieldMineDiagnostics = ($rows | Measure-Object FieldMineDiagnostics -Sum).Sum
+	HiddenExplosive = ($rows | Measure-Object HiddenExplosive -Sum).Sum
 	ProximityStage = ($rows | Measure-Object ProximityStage -Sum).Sum
 	ProximityBlocked = ($rows | Measure-Object ProximityBlocked -Sum).Sum
 	ExplosiveAction = ($rows | Measure-Object ExplosiveAction -Sum).Sum
@@ -184,13 +231,23 @@ $rows | Group-Object Save | ForEach-Object {
 		FirstWalk = ($g | Measure-Object FirstWalk -Sum).Sum
 		FirstSupport = ($g | Measure-Object FirstSupport -Sum).Sum
 		FirstStagingHold = ($g | Measure-Object FirstStagingHold -Sum).Sum
+		PlayerAimed = ($g | Measure-Object PlayerAimed -Sum).Sum
+		PlayerSnap = ($g | Measure-Object PlayerSnap -Sum).Sum
+		PlayerAuto = ($g | Measure-Object PlayerAuto -Sum).Sum
+		PlayerThrow = ($g | Measure-Object PlayerThrow -Sum).Sum
 		CautiousPatrol = ($g | Measure-Object CautiousPatrol -Sum).Sum
 		SupportMove = ($g | Measure-Object SupportMove -Sum).Sum
 		StagingHold = ($g | Measure-Object StagingHold -Sum).Sum
+		InitialDeploymentHold = ($g | Measure-Object InitialDeploymentHold -Sum).Sum
+		ClusterBreak = ($g | Measure-Object ClusterBreak -Sum).Sum
+		BlastClearance = ($g | Measure-Object BlastClearance -Sum).Sum
 		LineBreak = ($g | Measure-Object LineBreak -Sum).Sum
+		PreserveExplosive = ($g | Measure-Object PreserveExplosive -Sum).Sum
 		PanicSuppressed = ($g | Measure-Object PanicSuppressed -Sum).Sum
 		ExplosiveAction = ($g | Measure-Object ExplosiveAction -Sum).Sum
 		TeamExplosive = ($g | Measure-Object TeamExplosive -Sum).Sum
+		FieldMine = ($g | Measure-Object FieldMine -Sum).Sum
+		FieldMineDiagnostics = ($g | Measure-Object FieldMineDiagnostics -Sum).Sum
 		GrenadeNoTU = ($g | Measure-Object GrenadeNoTU -Sum).Sum
 		GrenadeAllyRisk = ($g | Measure-Object GrenadeAllyRisk -Sum).Sum
 	}
