@@ -75,6 +75,19 @@ constexpr int PLAYER_AI_SURVIVAL_ALLY_LIMIT = 3; // Размер отряда, �
 constexpr int PLAYER_AI_SURVIVAL_WOUNDED_DIVISOR = 4; // Доля раненых, после которой outnumbered считается survival pressure.
 constexpr int PLAYER_AI_LATE_SURVIVAL_TURN = 2; // После этого хода включается late outnumbered pressure.
 constexpr int PLAYER_AI_LATE_SURVIVAL_HOSTILE_MARGIN = 5; // Перевес hostile для late outnumbered pressure.
+constexpr int PLAYER_AI_ASSIGNMENT_DISTANCE_PENALTY = 3; // Штраф score назначения за каждую клетку дистанции до цели.
+constexpr int PLAYER_AI_SMALL_VISIBLE_CONTACT_LIMIT = 2; // Количество видимых контактов, которое planner считает малым.
+constexpr int PLAYER_AI_SIEGE_ROOM_CONTACT_LIMIT = 2; // Минимум комнатных контактов для явного siege-room режима.
+constexpr int PLAYER_AI_HOLD_REACTION_HOSTILE_LIMIT = 6; // Число hostile, после которого малый видимый контакт удерживается reaction-режимом.
+constexpr int PLAYER_AI_VISIBLE_MIN_ASSIGNEES = 3; // Минимум бойцов, которых можно назначить на видимую цель.
+constexpr int PLAYER_AI_VISIBLE_EXTRA_ASSIGNEE_DIVISOR = 2; // Доля видящих, но не стреляющих союзников, добавляемая к лимиту видимой цели.
+constexpr int PLAYER_AI_HIDDEN_BLIND_ASSIGNEE_LIMIT = 3; // Лимит назначений на hidden contact без видящих/стреляющих союзников.
+constexpr int PLAYER_AI_HIDDEN_SEEN_ASSIGNEE_LIMIT = 5; // Лимит назначений на hidden contact с косвенной видимостью/линией огня.
+constexpr int PLAYER_AI_HIDDEN_SURVIVE_ASSIGNEE_LIMIT = 2; // Лимит hidden assignments в survival-режиме.
+constexpr int PLAYER_AI_HIDDEN_DEFENSIVE_ASSIGNEE_LIMIT = 4; // Лимит hidden assignments в defend/hold режимах.
+constexpr int PLAYER_AI_SIEGE_HIDDEN_ASSIGNEE_LIMIT = 5; // Лимит hidden assignments при siege-room стратегии.
+constexpr int PLAYER_AI_DANGEROUS_VISIBLE_ASSIGNEE_LIMIT = 5; // Минимальный лимит назначений на опасную видимую цель.
+constexpr int PLAYER_AI_WOUNDED_ASSIGNEE_LIMIT = 6; // Минимальный лимит назначений на раненую цель для добивания.
 
 bool playerAIRoomActsOpen(const BattleRoomInfo &room)
 {
@@ -250,7 +263,7 @@ int PlayerFactionPlanner::scoreAssignment(BattleUnit *actor, const PlayerFaction
 	}
 	const int distance = Position::distance2d(actor->getPosition(), contact.enemy->getPosition());
 	int score = contact.threatScore + contact.focusScore;
-	score -= distance * 3;
+	score -= distance * PLAYER_AI_ASSIGNMENT_DISTANCE_PENALTY;
 	BattleItem *weapon = actor->getMainHandWeapon(false);
 	if (weapon && weapon->getRules())
 	{
@@ -476,7 +489,7 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	{
 		_plan.strategy = PFS_HUNT_LAST_ENEMY;
 	}
-	else if (squadBadlyExposed && (outnumbered || squadWoundedUnderContact) && _plan.visibleContacts <= 2)
+	else if (squadBadlyExposed && (outnumbered || squadWoundedUnderContact) && _plan.visibleContacts <= PLAYER_AI_SMALL_VISIBLE_CONTACT_LIMIT)
 	{
 		_plan.strategy = PFS_RETREAT_REGROUP;
 	}
@@ -484,7 +497,7 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	{
 		_plan.strategy = PFS_SURVIVE;
 	}
-	else if (dangerousRoomProblem && _plan.roomContacts >= 2 && (mostlyHidden || _plan.visibleContacts == 0))
+	else if (dangerousRoomProblem && _plan.roomContacts >= PLAYER_AI_SIEGE_ROOM_CONTACT_LIMIT && (mostlyHidden || _plan.visibleContacts == 0))
 	{
 		_plan.strategy = PFS_SIEGE_ROOM;
 	}
@@ -500,7 +513,7 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	{
 		_plan.strategy = PFS_SIEGE_ROOM;
 	}
-	else if (_plan.visibleContacts > 0 && _plan.visibleContacts <= 2 && _plan.activeHostiles > 6)
+	else if (_plan.visibleContacts > 0 && _plan.visibleContacts <= PLAYER_AI_SMALL_VISIBLE_CONTACT_LIMIT && _plan.activeHostiles > PLAYER_AI_HOLD_REACTION_HOSTILE_LIMIT)
 	{
 		_plan.strategy = PFS_HOLD_REACTION;
 	}
@@ -531,25 +544,25 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 			}
 			const int assignedCount = assignedCountByEnemyId[contact.enemy->getId()];
 			int maxAssignees = contact.visibleContact
-				? std::max(3, (int)contact.canShootBy.size() + std::max(0, (int)contact.visibleBy.size() - (int)contact.canShootBy.size()) / 2)
+				? std::max(PLAYER_AI_VISIBLE_MIN_ASSIGNEES, (int)contact.canShootBy.size() + std::max(0, (int)contact.visibleBy.size() - (int)contact.canShootBy.size()) / PLAYER_AI_VISIBLE_EXTRA_ASSIGNEE_DIVISOR)
 				: ((_plan.enemies.size() == 1 || _save->getTurn() >= PLAYER_AI_HIDDEN_ASSIGN_ALL_TURN)
 					? (int)_plan.allies.size()
-					: std::min((int)_plan.allies.size(), (contact.canShootBy.empty() && contact.visibleBy.empty()) ? 3 : 5));
+					: std::min((int)_plan.allies.size(), (contact.canShootBy.empty() && contact.visibleBy.empty()) ? PLAYER_AI_HIDDEN_BLIND_ASSIGNEE_LIMIT : PLAYER_AI_HIDDEN_SEEN_ASSIGNEE_LIMIT));
 			if (!contact.visibleContact && (_plan.strategy == PFS_DEFEND_LINE || _plan.strategy == PFS_HOLD_REACTION || _plan.strategy == PFS_SURVIVE))
 			{
-				maxAssignees = std::min(maxAssignees, _plan.strategy == PFS_SURVIVE ? 2 : 4);
+				maxAssignees = std::min(maxAssignees, _plan.strategy == PFS_SURVIVE ? PLAYER_AI_HIDDEN_SURVIVE_ASSIGNEE_LIMIT : PLAYER_AI_HIDDEN_DEFENSIVE_ASSIGNEE_LIMIT);
 			}
 			else if (!contact.visibleContact && _plan.strategy == PFS_SIEGE_ROOM)
 			{
-				maxAssignees = std::min(maxAssignees, 5);
+				maxAssignees = std::min(maxAssignees, PLAYER_AI_SIEGE_HIDDEN_ASSIGNEE_LIMIT);
 			}
 			if (contact.visibleContact && (contact.threatScore >= PLAYER_AI_DANGEROUS_VISIBLE_THREAT || contact.canShootBy.size() >= PLAYER_AI_ROOM_CONTROLLED_OPENING_LIMIT))
 			{
-				maxAssignees = std::max(maxAssignees, 5);
+				maxAssignees = std::max(maxAssignees, PLAYER_AI_DANGEROUS_VISIBLE_ASSIGNEE_LIMIT);
 			}
 			if (contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= PLAYER_AI_WOUNDED_HEALTH_LIMIT)
 			{
-				maxAssignees = std::max(maxAssignees, 6);
+				maxAssignees = std::max(maxAssignees, PLAYER_AI_WOUNDED_ASSIGNEE_LIMIT);
 			}
 			if (assignedCount >= maxAssignees && !canShoot)
 			{

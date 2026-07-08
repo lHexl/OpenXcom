@@ -174,6 +174,203 @@ constexpr int PLAYER_AI_GRENADE_HIGH_VALUE_WEAPON_DANGER = 105; // Опасно�
 constexpr int PLAYER_AI_GRENADE_SCATTER_PENALTY = 180; // Штраф grenade score за риск scatter по союзникам.
 constexpr int PLAYER_AI_GRENADE_EVACUATABLE_ALLY_PENALTY = 25; // Штраф за союзника в blast radius, который теоретически может уйти.
 constexpr int PLAYER_AI_GRENADE_RISKY_EVACUATION_PENALTY = 160; // Дополнительный штраф за рискованную эвакуацию союзника из blast.
+constexpr int PLAYER_AI_WEAPON_DANGER_RADIUS_BONUS = 12; // Вклад blast radius в danger score оружия.
+constexpr int PLAYER_AI_THROW_DISTANCE_BIAS = 8; // Смещение старой формулы дальности броска перед переводом voxel distance в tile distance.
+constexpr double PLAYER_AI_THROW_DISTANCE_TILE_SCALE = 16.0; // Перевод throw-distance из voxel-like единиц в клетки.
+constexpr double PLAYER_AI_THROW_UNDERWATER_FACTOR_BASE = 100.0; // База процентного underwater throw factor.
+constexpr int PLAYER_AI_THROW_TARGET_VOXEL_XY = 8; // Центр tile по X/Y для проверки траектории броска.
+constexpr int PLAYER_AI_THROW_TARGET_VOXEL_Z_BASE = 2; // Базовая высота target voxel над terrain level.
+constexpr double PLAYER_AI_THROW_MIN_CURVATURE = 0.48; // Минимальная кривизна параболы броска.
+constexpr double PLAYER_AI_THROW_CURVATURE_STRENGTH_FACTOR = 1.73; // Вес strength/weight в стартовой кривизне броска.
+constexpr double PLAYER_AI_THROW_KNEEL_CURVATURE_BONUS = 0.1; // Добавка к кривизне броска для kneeling unit.
+constexpr double PLAYER_AI_THROW_MAX_CURVATURE = 5.0; // Верхняя граница перебора кривизны траектории.
+constexpr double PLAYER_AI_THROW_CURVATURE_STEP = 0.5; // Шаг перебора кривизны траектории.
+constexpr int PLAYER_AI_PICKUP_TU_COST = 4; // Hardcoded TU за поднятие предмета перед использованием/броском.
+constexpr int PLAYER_AI_EXPLOSIVE_POWER_SCORE = 2; // Вес power в выборе лучшей взрывчатки.
+constexpr int PLAYER_AI_EXPLOSIVE_RADIUS_SCORE = 25; // Вес radius в выборе лучшей взрывчатки.
+constexpr int PLAYER_AI_THROWER_THROWING_SCORE = 4; // Вес throwing skill при ранжировании носителей взрывчатки.
+constexpr int PLAYER_AI_THROWER_TU_SCORE = 2; // Вес TU при ранжировании носителей взрывчатки.
+constexpr int PLAYER_AI_THROWER_RADIUS_SCORE = 20; // Вес blast radius при ранжировании носителей взрывчатки.
+constexpr int PLAYER_AI_PENDING_GRENADE_MEMORY_TURNS = 4; // Сколько ходов pending grenade danger считается актуальным.
+constexpr int PLAYER_AI_PENDING_MINE_MEMORY_TURNS = 3; // Сколько ходов proximity mine plan/staging считается актуальным.
+constexpr int PLAYER_AI_PROXIMITY_DEFAULT_TARGET_SPACING = 7; // Дистанция разделения proximity mine target по умолчанию.
+constexpr int PLAYER_AI_PROXIMITY_CONTACT_MEMORY_DISTANCE = 8; // Максимальная дистанция совпадения contact в памяти proximity mine.
+constexpr int PLAYER_AI_PROXIMITY_TARGET_MEMORY_DISTANCE = 7; // Максимальная дистанция совпадения target в памяти proximity mine.
+constexpr int PLAYER_AI_MOVEMENT_OSCILLATION_DECAY = 1; // На сколько снижается oscillation при нормальном движении/новом ходу.
+constexpr int PLAYER_AI_MOVEMENT_OSCILLATION_GAIN = 2; // На сколько растет oscillation при возврате между двумя позициями.
+constexpr int PLAYER_AI_INITIAL_CLOSEST_DISTANCE = 100; // Начальный closest distance до поиска ближайшей цели.
+constexpr float PLAYER_AI_LEEROY_RUN_STAMINA_FRACTION = 0.4f; // Доля stamina, выше которой mindless melee unit может бежать.
+constexpr int PLAYER_AI_MEDIKIT_LOW_ENERGY_PERCENT = 40; // Energy percent, ниже которого AI хочет stimulant.
+constexpr int PLAYER_AI_MEDIKIT_HEAL_BASE_CHANCE = 120; // Базовый шанс heal при нулевом effective health.
+constexpr int PLAYER_AI_MEDIKIT_HEAL_HEALTH_SCALE = 4; // Снижение heal chance за процент effective health.
+constexpr int PLAYER_AI_MEDIKIT_RANDOM_HEAL_CHANCE = 5; // Минимальный случайный heal wish при не срочной ране.
+constexpr int PLAYER_AI_MEDIKIT_STUN_BASE_CHANCE = 140; // Базовый шанс stimulant против stun при нулевом health percent.
+constexpr int PLAYER_AI_MEDIKIT_STUN_HEALTH_SCALE = 7; // Снижение stun stimulant chance за процент health.
+constexpr int PLAYER_AI_MEDIKIT_ENERGY_BASE_CHANCE = 120; // Базовый шанс stimulant для энергии при нулевой energy.
+constexpr int PLAYER_AI_MEDIKIT_ENERGY_SCALE = 3; // Снижение energy stimulant chance за процент energy.
+constexpr int PLAYER_AI_REACTION_FIRING_TOLERANCE = 8; // Насколько reactions могут отставать/обгонять firing для reaction guard.
+constexpr int PLAYER_AI_SCOUT_TU_SCORE = 2; // Вес TU в ранжировании scout-кандидатов.
+constexpr int PLAYER_AI_SCOUT_HEALTH_SCORE = 80; // Вес текущего здоровья в scout score.
+constexpr int PLAYER_AI_SCOUT_SCORE_MARGIN = 8; // Преимущество другого бойца, чтобы считать его лучшим scout.
+constexpr int PLAYER_AI_SCOUT_BETTER_LIMIT = 2; // Сколько лучших scout-кандидатов допускается перед отказом от scout роли.
+constexpr int PLAYER_AI_ODDS_INITIAL_ESCAPE = 80; // Множитель escape odds для initial deploy.
+constexpr int PLAYER_AI_ODDS_INITIAL_AMBUSH = 230; // Множитель ambush odds для initial deploy.
+constexpr int PLAYER_AI_ODDS_INITIAL_COMBAT = 65; // Множитель combat odds для initial deploy.
+constexpr int PLAYER_AI_ODDS_INITIAL_PATROL = 18; // Множитель patrol odds для initial deploy.
+constexpr int PLAYER_AI_ODDS_INITIAL_FIRE_SUPPORT_AMBUSH = 125; // Доп. ambush множитель marksman/heavy в initial deploy.
+constexpr int PLAYER_AI_ODDS_INITIAL_ASSAULT_COMBAT = 110; // Доп. combat множитель assault в initial deploy.
+constexpr int PLAYER_AI_ODDS_DEFEND_ESCAPE = 110; // Множитель escape odds для defend line.
+constexpr int PLAYER_AI_ODDS_DEFEND_AMBUSH = 210; // Множитель ambush odds для defend line.
+constexpr int PLAYER_AI_ODDS_DEFEND_COMBAT = 75; // Множитель combat odds для defend line.
+constexpr int PLAYER_AI_ODDS_DEFEND_PATROL = 35; // Множитель patrol odds для defend line.
+constexpr int PLAYER_AI_ODDS_DEFEND_FIRE_SUPPORT_AMBUSH = 125; // Доп. ambush множитель marksman/heavy в defend line.
+constexpr int PLAYER_AI_ODDS_DEFEND_ASSAULT_COMBAT = 115; // Доп. combat множитель assault в defend line.
+constexpr int PLAYER_AI_ODDS_SIEGE_ESCAPE = 115; // Множитель escape odds для siege room.
+constexpr int PLAYER_AI_ODDS_SIEGE_AMBUSH = 240; // Множитель ambush odds для siege room.
+constexpr int PLAYER_AI_ODDS_SIEGE_COMBAT = 70; // Множитель combat odds для siege room.
+constexpr int PLAYER_AI_ODDS_SIEGE_PATROL = 20; // Множитель patrol odds для siege room.
+constexpr int PLAYER_AI_ODDS_SIEGE_ENTRY_AMBUSH = 125; // Доп. ambush множитель assault/melee в siege room.
+constexpr int PLAYER_AI_ODDS_SIEGE_MARKSMAN_COMBAT = 80; // Доп. combat множитель marksman в siege room.
+constexpr int PLAYER_AI_ODDS_HOLD_ESCAPE = 105; // Множитель escape odds для hold reaction.
+constexpr int PLAYER_AI_ODDS_HOLD_AMBUSH = 260; // Множитель ambush odds для hold reaction.
+constexpr int PLAYER_AI_ODDS_HOLD_COMBAT = 55; // Множитель combat odds для hold reaction.
+constexpr int PLAYER_AI_ODDS_HOLD_PATROL = 20; // Множитель patrol odds для hold reaction.
+constexpr int PLAYER_AI_ODDS_HOLD_SUPPORT_AMBUSH = 120; // Доп. ambush множитель support/marksman в hold reaction.
+constexpr int PLAYER_AI_ODDS_ASSAULT_ESCAPE = 70; // Множитель escape odds для assault.
+constexpr int PLAYER_AI_ODDS_ASSAULT_AMBUSH = 75; // Множитель ambush odds для assault.
+constexpr int PLAYER_AI_ODDS_ASSAULT_COMBAT = 160; // Множитель combat odds для assault.
+constexpr int PLAYER_AI_ODDS_ASSAULT_PATROL = 65; // Множитель patrol odds для assault.
+constexpr int PLAYER_AI_ODDS_ASSAULT_FRONT_COMBAT = 125; // Доп. combat множитель assault/melee в assault.
+constexpr int PLAYER_AI_ODDS_ASSAULT_FIRE_SUPPORT_COMBAT = 110; // Доп. combat множитель marksman/heavy в assault.
+constexpr int PLAYER_AI_ODDS_SURVIVE_CONTACT_ESCAPE = 230; // Escape odds survive при видимом/spotting контакте.
+constexpr int PLAYER_AI_ODDS_SURVIVE_SAFE_ESCAPE = 95; // Escape odds survive без прямого контакта.
+constexpr int PLAYER_AI_ODDS_SURVIVE_CONTACT_AMBUSH = 145; // Ambush odds survive при прямом контакте.
+constexpr int PLAYER_AI_ODDS_SURVIVE_SAFE_AMBUSH = 220; // Ambush odds survive без прямого контакта.
+constexpr int PLAYER_AI_ODDS_SURVIVE_COMBAT = 50; // Combat odds survive.
+constexpr int PLAYER_AI_ODDS_SURVIVE_SUPPORT_ESCAPE = 120; // Доп. escape множитель support/heavy в survive.
+constexpr int PLAYER_AI_ODDS_SURVIVE_ASSAULT_AMBUSH = 115; // Доп. ambush множитель assault в survive.
+constexpr int PLAYER_AI_ODDS_RETREAT_ESCAPE = 300; // Множитель escape odds для retreat regroup.
+constexpr int PLAYER_AI_ODDS_RETREAT_AMBUSH = 75; // Множитель ambush odds для retreat regroup.
+constexpr int PLAYER_AI_ODDS_RETREAT_COMBAT = 35; // Множитель combat odds для retreat regroup.
+constexpr int PLAYER_AI_ODDS_RETREAT_FRONT_AMBUSH = 115; // Доп. ambush множитель assault/melee в retreat regroup.
+constexpr int PLAYER_AI_ODDS_HUNT_ESCAPE = 70; // Множитель escape odds для hunt last enemy.
+constexpr int PLAYER_AI_ODDS_HUNT_VISIBLE_AMBUSH = 120; // Ambush odds hunt при видимом или последнем известном враге.
+constexpr int PLAYER_AI_ODDS_HUNT_HIDDEN_AMBUSH = 160; // Ambush odds hunt при скрытом последнем враге.
+constexpr int PLAYER_AI_ODDS_HUNT_VISIBLE_COMBAT = 145; // Combat odds hunt при видимом враге.
+constexpr int PLAYER_AI_ODDS_HUNT_HIDDEN_COMBAT = 90; // Combat odds hunt при скрытом враге.
+constexpr int PLAYER_AI_ODDS_HUNT_VISIBLE_PATROL = 90; // Patrol odds hunt при видимом враге.
+constexpr int PLAYER_AI_ODDS_HUNT_HIDDEN_PATROL = 65; // Patrol odds hunt при скрытом враге.
+constexpr int PLAYER_AI_ODDS_HUNT_FRONT_PRESSURE = 115; // Доп. patrol/combat множитель assault/melee в hunt.
+constexpr int PLAYER_AI_ODDS_HUNT_FIRE_SUPPORT_PATROL = 75; // Доп. patrol множитель marksman/heavy в hunt.
+constexpr int PLAYER_AI_ODDS_HUNT_FIRE_SUPPORT_AMBUSH = 115; // Доп. ambush множитель marksman/heavy в hunt.
+constexpr int PLAYER_AI_RANGE_DEFAULT = 9; // Базовая preferred engagement range до учета роли.
+constexpr int PLAYER_AI_RANGE_MARKSMAN = 13; // Preferred range для marksman.
+constexpr int PLAYER_AI_RANGE_HEAVY = 12; // Preferred range для heavy.
+constexpr int PLAYER_AI_RANGE_ASSAULT = 8; // Preferred range для assault.
+constexpr int PLAYER_AI_RANGE_MELEE = 3; // Preferred range для melee.
+constexpr int PLAYER_AI_RANGE_SUPPORT = 10; // Preferred range для support.
+constexpr int PLAYER_AI_RANGE_ACCURATE_AIMED = 100; // Aimed accuracy, дающая бонус к preferred range.
+constexpr int PLAYER_AI_RANGE_GOOD_FIRING = 60; // Firing skill, нужный для бонуса дальности с точным оружием.
+constexpr int PLAYER_AI_RANGE_ACCURATE_BONUS = 1; // Добавка дальности за точное aimed оружие.
+constexpr int PLAYER_AI_RANGE_AUTO_AIMED_LIMIT = 90; // Aimed accuracy ниже которой auto weapon считается ближним.
+constexpr int PLAYER_AI_RANGE_AUTO_PENALTY = 2; // Снижение дальности для auto-оружия с неточным aimed.
+constexpr int PLAYER_AI_RANGE_OVERWEIGHT_BONUS = 2; // Добавка preferred range для оружия тяжелее strength.
+constexpr int PLAYER_AI_RANGE_LOW_FIRING = 45; // Firing ниже этого значения уменьшает preferred range.
+constexpr int PLAYER_AI_RANGE_HIGH_FIRING = 70; // Firing выше этого значения увеличивает preferred range.
+constexpr int PLAYER_AI_RANGE_LOW_FIRING_PENALTY = 2; // Штраф preferred range для низкого firing.
+constexpr int PLAYER_AI_RANGE_HIGH_FIRING_BONUS = 1; // Бонус preferred range для высокого firing.
+constexpr int PLAYER_AI_RANGE_MIN = 3; // Нижняя граница preferred engagement range.
+constexpr int PLAYER_AI_RANGE_MAX = 15; // Верхняя граница preferred engagement range.
+constexpr int PLAYER_AI_WEAPON_POWER_SCORE = 3; // Вес raw weapon power в scoreWeaponForUnit.
+constexpr int PLAYER_AI_WEAPON_MIN_SKILL = 30; // Минимальный skill, используемый при оценке точности оружия.
+constexpr int PLAYER_AI_WEAPON_SNAP_SCALE = 60; // Делитель snap accuracy вклада в scoreWeaponForUnit.
+constexpr int PLAYER_AI_WEAPON_AIMED_SCALE = 90; // Делитель aimed accuracy вклада в scoreWeaponForUnit.
+constexpr int PLAYER_AI_WEAPON_AUTO_SCALE = 80; // Делитель auto accuracy вклада в scoreWeaponForUnit.
+constexpr int PLAYER_AI_WEAPON_MELEE_SCALE = 70; // Делитель melee accuracy вклада в scoreWeaponForUnit.
+constexpr int PLAYER_AI_WEAPON_MELEE_PENALTY = 180; // Штраф melee weapon при выборе carried weapon.
+constexpr int PLAYER_AI_WEAPON_WAYPOINT_BONUS = 80; // Бонус waypoint/blaster-like оружия.
+constexpr int PLAYER_AI_WEAPON_EXPLOSIVE_RADIUS_BONUS = 18; // Бонус оружия за blast radius ammo.
+constexpr int PLAYER_AI_WEAPON_OVERWEIGHT_PENALTY = 25; // Штраф за каждый weight сверх strength.
+constexpr int PLAYER_AI_WEAPON_WEIGHT_PENALTY = 2; // Базовый штраф за вес оружия.
+constexpr int PLAYER_AI_WEAPON_NO_AMMO_PENALTY = 250; // Штраф unloaded ammo weapon.
+constexpr int PLAYER_AI_EQUIP_SAFE_REQUIRED_GAIN = 40; // Минимальный выигрыш score для смены оружия без известных врагов.
+constexpr int PLAYER_AI_EQUIP_CONTACT_REQUIRED_GAIN = 160; // Минимальный выигрыш score для смены оружия при известных врагах.
+constexpr int PLAYER_AI_GRENADE_REJECT_CUTOFF = -50000; // Score ниже которого grenade/proximity target считается reject.
+constexpr int PLAYER_AI_GRENADE_PROXIMITY_BASE_SCORE = 20; // Базовый score proximity grenade target.
+constexpr int PLAYER_AI_GRENADE_MIN_EVACUATE_TU = 8; // Минимальный TU для выхода из blast radius.
+constexpr int PLAYER_AI_GRENADE_EVACUATE_TU_PER_STEP = 6; // TU на шаг эвакуации из blast radius.
+constexpr int PLAYER_AI_GRENADE_RISKY_EVACUATE_EXTRA_TU = 10; // Доп. TU запас, чтобы эвакуация не считалась рискованной.
+constexpr int PLAYER_AI_GRENADE_ALLY_BASE_PENALTY = 65; // Базовый штраф за союзника в blast radius.
+constexpr int PLAYER_AI_GRENADE_ALLY_RADIUS_PENALTY = 18; // Доп. штраф за близость союзника к центру blast.
+constexpr int PLAYER_AI_GRENADE_UNIT_BASE_SCORE = 90; // Базовый score врага в blast radius.
+constexpr int PLAYER_AI_GRENADE_WOUNDED_HEALTH_BONUS_BASE = 90; // Health benchmark для бонуса по раненым целям.
+constexpr int PLAYER_AI_GRENADE_DURABLE_BONUS = 110; // Бонус score за durable target.
+constexpr int PLAYER_AI_GRENADE_VERY_DURABLE_BONUS = 90; // Бонус score за very durable target.
+constexpr int PLAYER_AI_GRENADE_WEAPON_DANGER_BONUS_CAP = 160; // Максимальный бонус grenade score за опасное оружие врага.
+constexpr int PLAYER_AI_GRENADE_WEAPON_DANGER_BONUS_BASE = 70; // База вычитания из enemy weapon danger для бонуса.
+constexpr int PLAYER_AI_GRENADE_TARGET_DISTANCE_PENALTY = 8; // Штраф grenade unit score за дистанцию цели от центра blast.
+constexpr int PLAYER_AI_GRENADE_OLD_EFFICACY_SCORE = 120; // Вес старой explosiveEfficacy в grenade score.
+constexpr int PLAYER_AI_GRENADE_SCATTER_MIN_SCORE = 260; // Минимальный score для scatter-risk throw по неидеальной цели.
+constexpr int PLAYER_AI_GRENADE_RISKY_ALLY_MIN_SCORE = 360; // Минимальный score при risky evacuatable allies.
+constexpr int PLAYER_AI_GRENADE_SINGLE_EMPTY_TILE_PENALTY = 80; // Штраф single-target throw, если в target tile нет врага.
+constexpr int PLAYER_AI_GRENADE_SINGLE_DURABLE_HEALTH = 60; // Health одиночной цели для первого durable bonus.
+constexpr int PLAYER_AI_GRENADE_SINGLE_DURABLE_BONUS = 150; // Бонус single-target grenade за durable target.
+constexpr int PLAYER_AI_GRENADE_SINGLE_VERY_DURABLE_WEAPON = 120; // Weapon danger одиночной цели для very durable bonus.
+constexpr int PLAYER_AI_PROXIMITY_LOG_TURN_LIMIT = 3; // Последний ранний ход, когда логируются proximity skips.
+constexpr int PLAYER_AI_PROXIMITY_LOG_KNOWN_ENEMIES = 8; // Known enemies для early proximity diagnostics.
+constexpr int PLAYER_AI_PROXIMITY_THROW_LIMIT_MIN = 6; // Минимальный throw limit для proximity/grenade throw.
+constexpr int PLAYER_AI_PROXIMITY_THROW_ACCURACY_DIVISOR = 12; // Делитель accuracy в throw limit.
+constexpr int PLAYER_AI_PROXIMITY_STAGED_THROW_BONUS = 1; // Доп. дальность для staged proximity throw.
+constexpr int PLAYER_AI_PROXIMITY_NEARBY_MINE_MARGIN = 2; // Радиус поиска уже поставленной mine сверх blast radius.
+constexpr int PLAYER_AI_PROXIMITY_EARLY_HOSTILE_MIN = 8; // Минимум hostile для early field mine.
+constexpr int PLAYER_AI_PROXIMITY_ROOM_TILE_LIMIT = 160; // Максимальный размер обычной комнаты для mineable room.
+constexpr int PLAYER_AI_PROXIMITY_ROOM_ENTRY_LIMIT = 32; // Максимум entry positions обычной комнаты для mineable room.
+constexpr int PLAYER_AI_PROXIMITY_HALL_TILE_LIMIT = 80; // Максимальный размер hall для mineable proximity room.
+constexpr int PLAYER_AI_PROXIMITY_HALL_ENTRY_LIMIT = 18; // Максимум entry positions hall для mineable room.
+constexpr int PLAYER_AI_PROXIMITY_FIELD_ENTRY_LIMIT = 8; // Entry threshold, после которого early plan считается field mine.
+constexpr int PLAYER_AI_PROXIMITY_FIELD_ROOM_TILE_LIMIT = 120; // Room size threshold для field mine.
+constexpr int PLAYER_AI_PROXIMITY_FIELD_ALLY_DISTANCE = 7; // Ally distance threshold для field mine.
+constexpr int PLAYER_AI_PROXIMITY_WORTH_ENEMIES = 2; // Минимум enemiesInRoom для worthwhile mine contact.
+constexpr int PLAYER_AI_PROXIMITY_WORTH_ENTRY_LIMIT = 3; // Entry threshold, делающий contact worthy для mine.
+constexpr int PLAYER_AI_PROXIMITY_WORTH_HEALTH = 80; // Health threshold, делающий contact worthy для mine.
+constexpr int PLAYER_AI_PROXIMITY_ARMOR_POWER_NUM = 2; // Числитель armor/power threshold для worthy mine contact.
+constexpr int PLAYER_AI_PROXIMITY_ARMOR_POWER_DEN = 3; // Знаменатель armor/power threshold для worthy mine contact.
+constexpr int PLAYER_AI_PROXIMITY_FIELD_THREAT = 120; // Threat threshold для field mine contact.
+constexpr int PLAYER_AI_PROXIMITY_ROOM_THREAT = 145; // Threat threshold для room mine contact.
+constexpr int PLAYER_AI_PROXIMITY_BASE_MOVE_RADIUS = 10; // Базовый enemy move radius для mine planning.
+constexpr int PLAYER_AI_PROXIMITY_MOVE_RADIUS_ENEMY_CAP = 6; // Максимальная добавка enemy count к move radius.
+constexpr int PLAYER_AI_PROXIMITY_MOVE_RADIUS_PER_ENEMY = 2; // Добавка move radius за врага в комнате.
+constexpr int PLAYER_AI_PROXIMITY_MOVE_RADIUS_MIN = 6; // Нижняя граница move radius по TU врага.
+constexpr int PLAYER_AI_PROXIMITY_MOVE_RADIUS_MAX = 18; // Верхняя граница move radius по TU врага.
+constexpr int PLAYER_AI_PROXIMITY_MOVE_RADIUS_TU_DIVISOR = 4; // Делитель TU врага при оценке move radius.
+constexpr int PLAYER_AI_PROXIMITY_TACTICAL_BASE_SCORE = 115; // Базовый tactical score для proximity mine candidate.
+constexpr int PLAYER_AI_PROXIMITY_RADIUS_SCORE = 10; // Вклад radius в tactical score proximity mine.
+constexpr int PLAYER_AI_PROXIMITY_ROOM_ENEMY_SCORE_CAP = 90; // Максимальный бонус tactical score за enemiesInRoom.
+constexpr int PLAYER_AI_PROXIMITY_ROOM_ENEMY_SCORE = 40; // Бонус tactical score за врага в комнате.
+constexpr int PLAYER_AI_PROXIMITY_THREAT_SCORE_CAP = 90; // Максимальный бонус tactical score за contactThreat.
+constexpr int PLAYER_AI_PROXIMITY_THREAT_SCORE_DIVISOR = 3; // Делитель contactThreat для tactical score.
+constexpr int PLAYER_AI_PROXIMITY_BEHIND_TARGET_PENALTY = 140; // Штраф mine candidate, если он позади направления на контакт.
+constexpr int PLAYER_AI_PROXIMITY_DOT_SCORE_CAP = 95; // Максимальный бонус за продвижение вдоль линии к контакту.
+constexpr int PLAYER_AI_PROXIMITY_DOT_SCORE_DIVISOR = 2; // Делитель dot product для score.
+constexpr int PLAYER_AI_PROXIMITY_CROSS_PENALTY_CAP = 130; // Максимальный штраф за боковое отклонение от линии контакта.
+constexpr int PLAYER_AI_PROXIMITY_CROSS_PENALTY = 3; // Множитель cross deviation penalty.
+constexpr int PLAYER_AI_PROXIMITY_PATH_PROGRESS_SCORE = 8; // Бонус за продвижение mine target к contact path.
+constexpr int PLAYER_AI_PROXIMITY_THROW_ACCURACY_SCORE_CAP = 60; // Максимальный бонус за throw accuracy.
+constexpr int PLAYER_AI_PROXIMITY_THROW_ACCURACY_BASE = 50; // Accuracy baseline для бонуса throw accuracy.
+constexpr int PLAYER_AI_PROXIMITY_NARROW_ENTRY_LIMIT = 2; // Entries threshold для narrow-entry bonus.
+constexpr int PLAYER_AI_PROXIMITY_NARROW_ENTRY_BONUS = 45; // Tactical bonus за узкий вход.
+constexpr int PLAYER_AI_PROXIMITY_ROOM_EXIT_BONUS = 35; // Tactical bonus за target вне той же комнаты/field mine.
+constexpr int PLAYER_AI_PROXIMITY_CONTACT_OVERSHOOT_PENALTY = 15; // Штраф за mine target дальше enemy move radius.
+constexpr int PLAYER_AI_PROXIMITY_CONTACT_CLOSE_LIMIT = 1; // Дистанция слишком близко к контакту.
+constexpr int PLAYER_AI_PROXIMITY_CONTACT_CLOSE_PENALTY = 70; // Штраф за слишком близкий mine target.
+constexpr int PLAYER_AI_PROXIMITY_FIELD_ALLY_SAFE_DISTANCE = 7; // Желаемая дистанция field mine от ally anchor.
+constexpr int PLAYER_AI_PROXIMITY_FIELD_ALLY_PENALTY = 30; // Штраф за близость field mine к ally anchor.
+constexpr int PLAYER_AI_PROXIMITY_NON_HALL_BONUS = 25; // Бонус proximity target в комнате, не hall.
+constexpr int PLAYER_AI_PROXIMITY_LOW_THROW_ACCURACY = 65; // Accuracy threshold для too-far throw penalty.
+constexpr int PLAYER_AI_PROXIMITY_FIELD_RELAXED_KNOWN_ENEMIES = 12; // Known enemies, при которых field mine разрешает дальний бросок.
+constexpr int PLAYER_AI_PROXIMITY_MIN_SCORE = 140; // Минимальный score для немедленной постановки proximity mine.
+constexpr int PLAYER_AI_PROXIMITY_STAGE_MIN_SCORE = 145; // Минимальный score staged mine target.
+constexpr int PLAYER_AI_PROXIMITY_STAGE_MOVE_MIN_SCORE = 165; // Минимальный score движения для staged mine.
 constexpr double PLAYER_AI_GEOMETRY_EPSILON = 0.1; // Малый epsilon для проверок вырожденных 2D-векторов.
 
 const char *battleTypeName(BattleType type)
@@ -209,7 +406,7 @@ int playerAIWeaponDanger(const BattleItem *item)
 		}
 		const int accuracy = std::max(std::max(rule->getAccuracySnap(), rule->getAccuracyAimed()), rule->getAccuracyAuto());
 		const int radius = std::max(0, rule->getExplosionRadius({ BA_NONE }));
-		return std::max(0, rule->getPower()) + accuracy / 2 + radius * 12;
+		return std::max(0, rule->getPower()) + accuracy / 2 + radius * PLAYER_AI_WEAPON_DANGER_RADIUS_BONUS;
 	};
 	int danger = ruleDanger(item->getRules());
 	const BattleActionType ammoActions[] = { BA_SNAPSHOT, BA_AIMEDSHOT, BA_AUTOSHOT, BA_LAUNCH };
@@ -294,21 +491,21 @@ bool playerCanThrowFromTile(SavedBattleGame *save, BattleUnit *unit, BattleItem 
 	Position originVoxel = save->getTileEngine()->getOriginVoxel(action, originTile);
 	const int zlevel = originVoxel.z - ((target.z * Position::TileZ + 2) - targetTile->getTerrainLevel());
 	const int weight = std::max(1, item->getTotalWeight());
-	double maxDistance = (ProjectileFlyBState::getMaxThrowDistance(weight, unit->getBaseStats()->strength, zlevel) + 8) / 16.0;
+	double maxDistance = (ProjectileFlyBState::getMaxThrowDistance(weight, unit->getBaseStats()->strength, zlevel) + PLAYER_AI_THROW_DISTANCE_BIAS) / PLAYER_AI_THROW_DISTANCE_TILE_SCALE;
 	if (save->getDepth() > 0 && Mod::EXTENDED_UNDERWATER_THROW_FACTOR > 0)
 	{
-		maxDistance = maxDistance * (double)Mod::EXTENDED_UNDERWATER_THROW_FACTOR / 100.0;
+		maxDistance = maxDistance * (double)Mod::EXTENDED_UNDERWATER_THROW_FACTOR / PLAYER_AI_THROW_UNDERWATER_FACTOR_BASE;
 	}
 	const double realDistance = sqrt((double)(xdiff * xdiff) + (double)(ydiff * ydiff));
 	if (realDistance > maxDistance)
 	{
 		return false;
 	}
-	Position targetVoxel = target.toVoxel() + Position(8, 8, (2 + -targetTile->getTerrainLevel()));
+	Position targetVoxel = target.toVoxel() + Position(PLAYER_AI_THROW_TARGET_VOXEL_XY, PLAYER_AI_THROW_TARGET_VOXEL_XY, (PLAYER_AI_THROW_TARGET_VOXEL_Z_BASE + -targetTile->getTerrainLevel()));
 	Position targetPos = targetVoxel.toTile();
-	double curvature = std::max(0.48, 1.73 / sqrt(sqrt((double)unit->getBaseStats()->strength / (double)weight)) + (unit->isKneeled() ? 0.1 : 0.0));
+	double curvature = std::max(PLAYER_AI_THROW_MIN_CURVATURE, PLAYER_AI_THROW_CURVATURE_STRENGTH_FACTOR / sqrt(sqrt((double)unit->getBaseStats()->strength / (double)weight)) + (unit->isKneeled() ? PLAYER_AI_THROW_KNEEL_CURVATURE_BONUS : 0.0));
 	std::vector<Position> trajectory;
-	while (curvature < 5.0)
+	while (curvature < PLAYER_AI_THROW_MAX_CURVATURE)
 	{
 		trajectory.clear();
 		const int test = save->getTileEngine()->calculateParabolaVoxel(originVoxel, targetVoxel, true, &trajectory, unit, curvature, Position(0, 0, 0));
@@ -320,7 +517,7 @@ bool playerCanThrowFromTile(SavedBattleGame *save, BattleUnit *unit, BattleItem 
 				return true;
 			}
 		}
-		curvature += 0.5;
+		curvature += PLAYER_AI_THROW_CURVATURE_STEP;
 	}
 	return false;
 }
@@ -373,8 +570,8 @@ int getPlayerBestExplosiveReserve(BattleUnit *unit, SavedBattleGame *save, bool 
 			continue;
 		}
 		const RuleItemUseCost primeCost = unit->getActionTUs(BA_PRIME, item);
-		const int reserve = throwCost.Time + primeCost.Time + 4;
-		const int score = power * 2 + radius * 25 - reserve;
+		const int reserve = throwCost.Time + primeCost.Time + PLAYER_AI_PICKUP_TU_COST;
+		const int score = power * PLAYER_AI_EXPLOSIVE_POWER_SCORE + radius * PLAYER_AI_EXPLOSIVE_RADIUS_SCORE - reserve;
 		if (score > bestScore || (score == bestScore && reserve > bestReserve))
 		{
 			bestScore = score;
@@ -400,23 +597,23 @@ int getPlayerExplosiveThrowerRank(BattleUnit *unit, SavedBattleGame *save)
 {
 	if (!unit || !save || unit->getFaction() != FACTION_PLAYER)
 	{
-		return 999;
+		return PLAYER_AI_NO_THROWER_RANK;
 	}
 	int unitPower = 0;
 	int unitRadius = 0;
 	const int unitReserve = getPlayerBestExplosiveReserve(unit, save, true, &unitPower, &unitRadius);
 	if (unitReserve <= 0)
 	{
-		return 999;
+		return PLAYER_AI_NO_THROWER_RANK;
 	}
 	auto throwerScore = [](BattleUnit *candidate, int power, int radius) -> int
 	{
 		const UnitStats *stats = candidate->getBaseStats();
-		return stats->throwing * 4
-			+ stats->tu * 2
+		return stats->throwing * PLAYER_AI_THROWER_THROWING_SCORE
+			+ stats->tu * PLAYER_AI_THROWER_TU_SCORE
 			+ stats->strength
 			+ power
-			+ radius * 20;
+			+ radius * PLAYER_AI_THROWER_RADIUS_SCORE;
 	};
 	const int unitScore = throwerScore(unit, unitPower, unitRadius);
 	int rank = 0;
@@ -612,7 +809,7 @@ void cleanupPendingPlayerProximityMinePlans(SavedBattleGame *save)
 	pendingPlayerProximityMinePlans.erase(std::remove_if(pendingPlayerProximityMinePlans.begin(), pendingPlayerProximityMinePlans.end(),
 		[save, turn](const PendingPlayerProximityMinePlan &plan)
 		{
-			return plan.save != save || plan.turn + 4 < turn;
+			return plan.save != save || plan.turn + PLAYER_AI_PENDING_GRENADE_MEMORY_TURNS < turn;
 		}), pendingPlayerProximityMinePlans.end());
 	if (pendingPlayerProximityMinePlans.size() > PLAYER_AI_MEMORY_LIMIT_SMALL)
 	{
@@ -631,7 +828,7 @@ void cleanupPendingPlayerProximityMineStagings(SavedBattleGame *save)
 	pendingPlayerProximityMineStagings.erase(std::remove_if(pendingPlayerProximityMineStagings.begin(), pendingPlayerProximityMineStagings.end(),
 		[save, turn](const PendingPlayerProximityMineStaging &plan)
 		{
-			return plan.save != save || plan.turn + 3 < turn;
+			return plan.save != save || plan.turn + PLAYER_AI_PENDING_MINE_MEMORY_TURNS < turn;
 		}), pendingPlayerProximityMineStagings.end());
 	if (pendingPlayerProximityMineStagings.size() > PLAYER_AI_MEMORY_LIMIT_SMALL)
 	{
@@ -692,14 +889,14 @@ void clearPlayerProximityMineStaging(SavedBattleGame *save, int unitId)
 		}), pendingPlayerProximityMineStagings.end());
 }
 
-bool isRecentPlayerProximityMinePlan(SavedBattleGame *save, UnitFaction faction, const Position &contact, const Position *target = 0, int targetSpacing = 7)
+bool isRecentPlayerProximityMinePlan(SavedBattleGame *save, UnitFaction faction, const Position &contact, const Position *target = 0, int targetSpacing = PLAYER_AI_PROXIMITY_DEFAULT_TARGET_SPACING)
 {
 	cleanupPendingPlayerProximityMinePlans(save);
 	for (const auto &plan : pendingPlayerProximityMinePlans)
 	{
 		if (plan.faction == faction
 			&& plan.contact.z == contact.z
-			&& Position::distance2d(plan.contact, contact) <= 8
+			&& Position::distance2d(plan.contact, contact) <= PLAYER_AI_PROXIMITY_CONTACT_MEMORY_DISTANCE
 			&& (!target || (plan.target.z == target->z && Position::distance2d(plan.target, *target) <= targetSpacing)))
 		{
 			return true;
@@ -719,9 +916,9 @@ void recordPlayerProximityMinePlan(SavedBattleGame *save, UnitFaction faction, c
 	{
 		if (plan.faction == faction
 			&& plan.contact.z == contact.z
-			&& Position::distance2d(plan.contact, contact) <= 8
+			&& Position::distance2d(plan.contact, contact) <= PLAYER_AI_PROXIMITY_CONTACT_MEMORY_DISTANCE
 			&& plan.target.z == target.z
-			&& Position::distance2d(plan.target, target) <= 7)
+			&& Position::distance2d(plan.target, target) <= PLAYER_AI_PROXIMITY_TARGET_MEMORY_DISTANCE)
 		{
 			return;
 		}
@@ -818,14 +1015,14 @@ int updatePlayerMovementOscillation(SavedBattleGame *save, BattleUnit *unit)
 		{
 			if (memory.lastTurn != turn)
 			{
-				memory.oscillation = std::max(0, memory.oscillation - 1);
+				memory.oscillation = std::max(0, memory.oscillation - PLAYER_AI_MOVEMENT_OSCILLATION_DECAY);
 				memory.lastTurn = turn;
 				memory.turnMoveCount = 0;
 				memory.turnMoveDistance = 0;
 			}
 			if (pos == memory.lastPosition)
 			{
-				memory.oscillation = std::max(0, memory.oscillation - 1);
+				memory.oscillation = std::max(0, memory.oscillation - PLAYER_AI_MOVEMENT_OSCILLATION_DECAY);
 			}
 			else
 			{
@@ -837,11 +1034,11 @@ int updatePlayerMovementOscillation(SavedBattleGame *save, BattleUnit *unit)
 				}
 				if (pos == memory.previousPosition)
 				{
-					memory.oscillation += 2;
+					memory.oscillation += PLAYER_AI_MOVEMENT_OSCILLATION_GAIN;
 				}
 				else
 				{
-					memory.oscillation = std::max(0, memory.oscillation - 1);
+					memory.oscillation = std::max(0, memory.oscillation - PLAYER_AI_MOVEMENT_OSCILLATION_DECAY);
 				}
 				memory.previousPosition = memory.lastPosition;
 				memory.lastPosition = pos;
@@ -937,7 +1134,7 @@ bool updatePlayerFiredThisTurn(SavedBattleGame *save, BattleUnit *unit)
 PlayerFactionAI::PlayerFactionAI(SavedBattleGame *save, BattleUnit *unit, Node *node) :
 	AIModule(save, unit, node), _save(save), _unit(unit), _aggroTarget(0), _knownEnemies(0), _visibleEnemies(0), _spottingEnemies(0),
 	_escapeTUs(0), _ambushTUs(0), _weaponPickedUp(false), _rifle(false), _melee(false), _blaster(false), _grenade(false),
-	_didPsi(false), _AIMode(AI_PATROL), _closestDist(100), _fromNode(node), _toNode(0), _foundBaseModuleToDestroy(false),
+	_didPsi(false), _AIMode(AI_PATROL), _closestDist(PLAYER_AI_INITIAL_CLOSEST_DISTANCE), _fromNode(node), _toNode(0), _foundBaseModuleToDestroy(false),
 	_stalkAmbushAction(false), _cleanShotMoveAction(false), _fallbackCoverAction(false), _factionSupportMoveAction(false), _factionAI(0)
 {
 	_traceAI = Options::traceAI;
@@ -1055,7 +1252,7 @@ void PlayerFactionAI::dont_think(BattleAction *action)
 		}
 	}
 
-	bool canRun = _melee && _unit->getArmor()->allowsRunning(false) && _unit->getEnergy() > _unit->getBaseStats()->stamina * 0.4f;
+	bool canRun = _melee && _unit->getArmor()->allowsRunning(false) && _unit->getEnergy() > _unit->getBaseStats()->stamina * PLAYER_AI_LEEROY_RUN_STAMINA_FRACTION;
 	int visibleEnemiesToAttack = selectNearestTargetLeeroy(canRun);
 	if (_traceAI)
 	{
@@ -1105,8 +1302,8 @@ bool PlayerFactionAI::medikit_think(BattleMediKitType healOrStim)
 
 	// 2. quick unit checks (without RNG)
 	int totalWounds = self->getFatalWounds();
-	int percentHealthLeft = Clamp((self->getHealth() - self->getStunlevel()) * 100 / self->getBaseStats()->health, 0, 100);
-	int percentEnergyLeft = Clamp(self->getEnergy() * 100 / self->getBaseStats()->stamina, 0, 100);
+	int percentHealthLeft = Clamp((self->getHealth() - self->getStunlevel()) * PLAYER_AI_PERCENT / self->getBaseStats()->health, 0, PLAYER_AI_PERCENT);
+	int percentEnergyLeft = Clamp(self->getEnergy() * PLAYER_AI_PERCENT / self->getBaseStats()->stamina, 0, PLAYER_AI_PERCENT);
 
 	if (healOrStim == BMT_HEAL)
 	{
@@ -1115,7 +1312,7 @@ bool PlayerFactionAI::medikit_think(BattleMediKitType healOrStim)
 	}
 	else if (healOrStim == BMT_STIMULANT)
 	{
-		if (self->getStunlevel() <= 0 && percentEnergyLeft >= 40)
+		if (self->getStunlevel() <= 0 && percentEnergyLeft >= PLAYER_AI_MEDIKIT_LOW_ENERGY_PERCENT)
 			return false;
 	}
 	else
@@ -1167,11 +1364,11 @@ bool PlayerFactionAI::medikit_think(BattleMediKitType healOrStim)
 				//  0% health left = 120% chance to heal
 				// 15% health left =  60% chance to heal
 				// 30% health left =   0% chance to heal (actually 5% chance because of random heal wish)
-				int chanceToHeal = 120 - (percentHealthLeft * 4);
+				int chanceToHeal = PLAYER_AI_MEDIKIT_HEAL_BASE_CHANCE - (percentHealthLeft * PLAYER_AI_MEDIKIT_HEAL_HEALTH_SCALE);
 				if (chanceToHeal <= 0)
 				{
 					// 5% for random heal wish (it's not urgent, but you know damage accumulates over time)
-					chanceToHeal = 5;
+					chanceToHeal = PLAYER_AI_MEDIKIT_RANDOM_HEAL_CHANCE;
 				}
 				wantsToHeal = RNG::percent(chanceToHeal);
 			}
@@ -1196,17 +1393,17 @@ bool PlayerFactionAI::medikit_think(BattleMediKitType healOrStim)
 				//  0% health left = 140% chance to stim
 				// 10% health left =  70% chance to stim
 				// 20% health left =   0% chance to stim
-				int chanceToStim1 = 140 - (percentHealthLeft * 7);
+				int chanceToStim1 = PLAYER_AI_MEDIKIT_STUN_BASE_CHANCE - (percentHealthLeft * PLAYER_AI_MEDIKIT_STUN_HEALTH_SCALE);
 				wantsToStimStun = chanceToStim1 > 0 ? RNG::percent(chanceToStim1) : false;
 			}
 		}
 		// 2. do we want to increase energy?
-		if (percentEnergyLeft < 40)
+		if (percentEnergyLeft < PLAYER_AI_MEDIKIT_LOW_ENERGY_PERCENT)
 		{
 			//  0% energy left = 120% chance to stim
 			// 20% energy left =  60% chance to stim
 			// 40% energy left =   0% chance to stim
-			int chanceToStim2 = 120 - (percentEnergyLeft * 3);
+			int chanceToStim2 = PLAYER_AI_MEDIKIT_ENERGY_BASE_CHANCE - (percentEnergyLeft * PLAYER_AI_MEDIKIT_ENERGY_SCALE);
 			wantsToStimEnergy = RNG::percent(chanceToStim2);
 		}
 		if (!wantsToStimStun && !wantsToStimEnergy)
@@ -1237,7 +1434,7 @@ bool PlayerFactionAI::medikit_think(BattleMediKitType healOrStim)
 					// yes, hardcoded 4 TUs
 					// AI throwing grenades does that for decades and nobody cares, so calm down
 					// also, AI pays this cost each time, even if using the same medikit multiple times in a row
-					medikitAction.Time += 4; // 4TUs for picking up the medikit
+					medikitAction.Time += PLAYER_AI_PICKUP_TU_COST; // 4TUs for picking up the medikit
 
 					// sigh, modders...
 					//medikitAction.Health = 0;
@@ -1371,12 +1568,12 @@ PlayerFactionAI::PlayerAITacticalRole PlayerFactionAI::getPlayerTacticalRole(Bat
 	if (weapon && weapon->getRules()->getBattleType() == BT_FIREARM
 		&& stats->reactions >= PLAYER_AI_REACTION_SPECIALIST_MIN_REACTIONS
 		&& stats->tu >= PLAYER_AI_REACTION_SPECIALIST_MIN_TU
-		&& stats->reactions + 8 >= stats->firing)
+		&& stats->reactions + PLAYER_AI_REACTION_FIRING_TOLERANCE >= stats->firing)
 	{
 		return TACTICAL_REACTION_GUARD;
 	}
 	const int maxHealth = std::max(1, (int)stats->health);
-	const int selfScore = (int)stats->tu * 2 + (int)stats->reactions + _unit->getHealth() * 80 / maxHealth - (weapon ? weapon->getTotalWeight() : 0);
+	const int selfScore = (int)stats->tu * PLAYER_AI_SCOUT_TU_SCORE + (int)stats->reactions + _unit->getHealth() * PLAYER_AI_SCOUT_HEALTH_SCORE / maxHealth - (weapon ? weapon->getTotalWeight() : 0);
 	int betterScouts = 0;
 	for (auto *other : *_save->getUnits())
 	{
@@ -1387,13 +1584,13 @@ PlayerFactionAI::PlayerAITacticalRole PlayerFactionAI::getPlayerTacticalRole(Bat
 		BattleItem *otherWeapon = other->getMainHandWeapon(false);
 		const UnitStats *otherStats = other->getBaseStats();
 		const int otherMaxHealth = std::max(1, (int)otherStats->health);
-		const int otherScore = (int)otherStats->tu * 2 + (int)otherStats->reactions + other->getHealth() * 80 / otherMaxHealth - (otherWeapon ? otherWeapon->getTotalWeight() : 0);
-		if (otherScore > selfScore + 8)
+		const int otherScore = (int)otherStats->tu * PLAYER_AI_SCOUT_TU_SCORE + (int)otherStats->reactions + other->getHealth() * PLAYER_AI_SCOUT_HEALTH_SCORE / otherMaxHealth - (otherWeapon ? otherWeapon->getTotalWeight() : 0);
+		if (otherScore > selfScore + PLAYER_AI_SCOUT_SCORE_MARGIN)
 		{
 			++betterScouts;
 		}
 	}
-	if (role != ROLE_HEAVY && role != ROLE_MARKSMAN && role != ROLE_MELEE && _unit->getHealth() * PLAYER_AI_PERCENT / maxHealth >= PLAYER_AI_LOW_HEALTH_PERCENT && betterScouts < 2)
+	if (role != ROLE_HEAVY && role != ROLE_MARKSMAN && role != ROLE_MELEE && _unit->getHealth() * PLAYER_AI_PERCENT / maxHealth >= PLAYER_AI_LOW_HEALTH_PERCENT && betterScouts < PLAYER_AI_SCOUT_BETTER_LIMIT)
 	{
 		return TACTICAL_SCOUT;
 	}
@@ -1459,109 +1656,109 @@ void PlayerFactionAI::applyFactionStrategyToModeOdds(PlayerFactionStrategy strat
 	switch (strategy)
 	{
 	case PFS_INITIAL_DEPLOY:
-		*escapeOdds = scale(*escapeOdds, 80);
-		*ambushOdds = scale(*ambushOdds, 230);
-		*combatOdds = scale(*combatOdds, 65);
-		*patrolOdds = scale(*patrolOdds, 18);
+		*escapeOdds = scale(*escapeOdds, PLAYER_AI_ODDS_INITIAL_ESCAPE);
+		*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_INITIAL_AMBUSH);
+		*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_INITIAL_COMBAT);
+		*patrolOdds = scale(*patrolOdds, PLAYER_AI_ODDS_INITIAL_PATROL);
 		if (role == ROLE_MARKSMAN || role == ROLE_HEAVY)
 		{
-			*ambushOdds = scale(*ambushOdds, 125);
+			*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_INITIAL_FIRE_SUPPORT_AMBUSH);
 		}
 		else if (role == ROLE_ASSAULT)
 		{
-			*combatOdds = scale(*combatOdds, 110);
+			*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_INITIAL_ASSAULT_COMBAT);
 		}
 		break;
 	case PFS_DEFEND_LINE:
-		*escapeOdds = scale(*escapeOdds, 110);
-		*ambushOdds = scale(*ambushOdds, 210);
-		*combatOdds = scale(*combatOdds, 75);
-		*patrolOdds = scale(*patrolOdds, 35);
+		*escapeOdds = scale(*escapeOdds, PLAYER_AI_ODDS_DEFEND_ESCAPE);
+		*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_DEFEND_AMBUSH);
+		*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_DEFEND_COMBAT);
+		*patrolOdds = scale(*patrolOdds, PLAYER_AI_ODDS_DEFEND_PATROL);
 		if (role == ROLE_MARKSMAN || role == ROLE_HEAVY)
 		{
-			*ambushOdds = scale(*ambushOdds, 125);
+			*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_DEFEND_FIRE_SUPPORT_AMBUSH);
 		}
 		else if (role == ROLE_ASSAULT)
 		{
-			*combatOdds = scale(*combatOdds, 115);
+			*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_DEFEND_ASSAULT_COMBAT);
 		}
 		break;
 	case PFS_SIEGE_ROOM:
-		*escapeOdds = scale(*escapeOdds, 115);
-		*ambushOdds = scale(*ambushOdds, 240);
-		*combatOdds = scale(*combatOdds, 70);
-		*patrolOdds = scale(*patrolOdds, 20);
+		*escapeOdds = scale(*escapeOdds, PLAYER_AI_ODDS_SIEGE_ESCAPE);
+		*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_SIEGE_AMBUSH);
+		*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_SIEGE_COMBAT);
+		*patrolOdds = scale(*patrolOdds, PLAYER_AI_ODDS_SIEGE_PATROL);
 		if (role == ROLE_ASSAULT || role == ROLE_MELEE)
 		{
-			*ambushOdds = scale(*ambushOdds, 125);
+			*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_SIEGE_ENTRY_AMBUSH);
 		}
 		if (role == ROLE_MARKSMAN)
 		{
-			*combatOdds = scale(*combatOdds, 80);
+			*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_SIEGE_MARKSMAN_COMBAT);
 		}
 		break;
 	case PFS_HOLD_REACTION:
-		*escapeOdds = scale(*escapeOdds, 105);
-		*ambushOdds = scale(*ambushOdds, 260);
-		*combatOdds = scale(*combatOdds, 55);
-		*patrolOdds = scale(*patrolOdds, 20);
+		*escapeOdds = scale(*escapeOdds, PLAYER_AI_ODDS_HOLD_ESCAPE);
+		*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_HOLD_AMBUSH);
+		*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_HOLD_COMBAT);
+		*patrolOdds = scale(*patrolOdds, PLAYER_AI_ODDS_HOLD_PATROL);
 		if (role == ROLE_SUPPORT || role == ROLE_MARKSMAN)
 		{
-			*ambushOdds = scale(*ambushOdds, 120);
+			*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_HOLD_SUPPORT_AMBUSH);
 		}
 		break;
 	case PFS_ASSAULT:
-		*escapeOdds = scale(*escapeOdds, 70);
-		*ambushOdds = scale(*ambushOdds, 75);
-		*combatOdds = scale(*combatOdds, 160);
-		*patrolOdds = scale(*patrolOdds, 65);
+		*escapeOdds = scale(*escapeOdds, PLAYER_AI_ODDS_ASSAULT_ESCAPE);
+		*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_ASSAULT_AMBUSH);
+		*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_ASSAULT_COMBAT);
+		*patrolOdds = scale(*patrolOdds, PLAYER_AI_ODDS_ASSAULT_PATROL);
 		if (role == ROLE_ASSAULT || role == ROLE_MELEE)
 		{
-			*combatOdds = scale(*combatOdds, 125);
+			*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_ASSAULT_FRONT_COMBAT);
 		}
 		if (role == ROLE_MARKSMAN || role == ROLE_HEAVY)
 		{
-			*combatOdds = scale(*combatOdds, 110);
+			*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_ASSAULT_FIRE_SUPPORT_COMBAT);
 		}
 		break;
 	case PFS_SURVIVE:
-		*escapeOdds = scale(*escapeOdds, (_spottingEnemies || _visibleEnemies) ? 230 : 95);
-		*ambushOdds = scale(*ambushOdds, (_spottingEnemies || _visibleEnemies) ? 145 : 220);
-		*combatOdds = scale(*combatOdds, 50);
+		*escapeOdds = scale(*escapeOdds, (_spottingEnemies || _visibleEnemies) ? PLAYER_AI_ODDS_SURVIVE_CONTACT_ESCAPE : PLAYER_AI_ODDS_SURVIVE_SAFE_ESCAPE);
+		*ambushOdds = scale(*ambushOdds, (_spottingEnemies || _visibleEnemies) ? PLAYER_AI_ODDS_SURVIVE_CONTACT_AMBUSH : PLAYER_AI_ODDS_SURVIVE_SAFE_AMBUSH);
+		*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_SURVIVE_COMBAT);
 		*patrolOdds = 0;
 		if (role == ROLE_SUPPORT || role == ROLE_HEAVY)
 		{
-			*escapeOdds = scale(*escapeOdds, 120);
+			*escapeOdds = scale(*escapeOdds, PLAYER_AI_ODDS_SURVIVE_SUPPORT_ESCAPE);
 		}
 		else if (role == ROLE_ASSAULT)
 		{
-			*ambushOdds = scale(*ambushOdds, 115);
+			*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_SURVIVE_ASSAULT_AMBUSH);
 		}
 		break;
 	case PFS_RETREAT_REGROUP:
-		*escapeOdds = scale(*escapeOdds, 300);
-		*ambushOdds = scale(*ambushOdds, 75);
-		*combatOdds = scale(*combatOdds, 35);
+		*escapeOdds = scale(*escapeOdds, PLAYER_AI_ODDS_RETREAT_ESCAPE);
+		*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_RETREAT_AMBUSH);
+		*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_RETREAT_COMBAT);
 		*patrolOdds = 0;
 		if (role == ROLE_ASSAULT || role == ROLE_MELEE)
 		{
-			*ambushOdds = scale(*ambushOdds, 115);
+			*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_RETREAT_FRONT_AMBUSH);
 		}
 		break;
 	case PFS_HUNT_LAST_ENEMY:
-		*escapeOdds = scale(*escapeOdds, 70);
-		*ambushOdds = scale(*ambushOdds, (_visibleEnemies || _knownEnemies <= 1) ? 120 : 160);
-		*combatOdds = scale(*combatOdds, _visibleEnemies ? 145 : 90);
-		*patrolOdds = scale(*patrolOdds, _visibleEnemies ? 90 : 65);
+		*escapeOdds = scale(*escapeOdds, PLAYER_AI_ODDS_HUNT_ESCAPE);
+		*ambushOdds = scale(*ambushOdds, (_visibleEnemies || _knownEnemies <= 1) ? PLAYER_AI_ODDS_HUNT_VISIBLE_AMBUSH : PLAYER_AI_ODDS_HUNT_HIDDEN_AMBUSH);
+		*combatOdds = scale(*combatOdds, _visibleEnemies ? PLAYER_AI_ODDS_HUNT_VISIBLE_COMBAT : PLAYER_AI_ODDS_HUNT_HIDDEN_COMBAT);
+		*patrolOdds = scale(*patrolOdds, _visibleEnemies ? PLAYER_AI_ODDS_HUNT_VISIBLE_PATROL : PLAYER_AI_ODDS_HUNT_HIDDEN_PATROL);
 		if (role == ROLE_ASSAULT || role == ROLE_MELEE)
 		{
-			*patrolOdds = scale(*patrolOdds, 115);
-			*combatOdds = scale(*combatOdds, 115);
+			*patrolOdds = scale(*patrolOdds, PLAYER_AI_ODDS_HUNT_FRONT_PRESSURE);
+			*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_HUNT_FRONT_PRESSURE);
 		}
 		if (role == ROLE_MARKSMAN || role == ROLE_HEAVY)
 		{
-			*patrolOdds = scale(*patrolOdds, 75);
-			*ambushOdds = scale(*ambushOdds, 115);
+			*patrolOdds = scale(*patrolOdds, PLAYER_AI_ODDS_HUNT_FIRE_SUPPORT_PATROL);
+			*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_HUNT_FIRE_SUPPORT_AMBUSH);
 		}
 		break;
 	default:
@@ -1573,100 +1770,100 @@ int PlayerFactionAI::getPreferredEngagementRange(BattleItem *weapon) const
 {
 	const PlayerAIRole role = getPlayerAIRole(weapon);
 	const UnitStats *stats = _unit->getBaseStats();
-	int preferred = 9;
+	int preferred = PLAYER_AI_RANGE_DEFAULT;
 	switch (role)
 	{
 	case ROLE_MARKSMAN:
-		preferred = 13;
+		preferred = PLAYER_AI_RANGE_MARKSMAN;
 		break;
 	case ROLE_HEAVY:
-		preferred = 12;
+		preferred = PLAYER_AI_RANGE_HEAVY;
 		break;
 	case ROLE_ASSAULT:
-		preferred = 8;
+		preferred = PLAYER_AI_RANGE_ASSAULT;
 		break;
 	case ROLE_MELEE:
-		preferred = 3;
+		preferred = PLAYER_AI_RANGE_MELEE;
 		break;
 	case ROLE_SUPPORT:
 	default:
-		preferred = 10;
+		preferred = PLAYER_AI_RANGE_SUPPORT;
 		break;
 	}
 
 	if (weapon)
 	{
 		const RuleItem *rule = weapon->getRules();
-		if (rule->getAccuracyAimed() >= 100 && stats->firing >= 60)
+		if (rule->getAccuracyAimed() >= PLAYER_AI_RANGE_ACCURATE_AIMED && stats->firing >= PLAYER_AI_RANGE_GOOD_FIRING)
 		{
-			preferred += 1;
+			preferred += PLAYER_AI_RANGE_ACCURATE_BONUS;
 		}
-		if (rule->getAccuracyAuto() > 0 && rule->getAccuracyAimed() < 90)
+		if (rule->getAccuracyAuto() > 0 && rule->getAccuracyAimed() < PLAYER_AI_RANGE_AUTO_AIMED_LIMIT)
 		{
-			preferred -= 2;
+			preferred -= PLAYER_AI_RANGE_AUTO_PENALTY;
 		}
 		if (weapon->getTotalWeight() > stats->strength)
 		{
-			preferred += 2;
+			preferred += PLAYER_AI_RANGE_OVERWEIGHT_BONUS;
 		}
 	}
 
-	if (stats->firing < 45)
+	if (stats->firing < PLAYER_AI_RANGE_LOW_FIRING)
 	{
-		preferred -= 2;
+		preferred -= PLAYER_AI_RANGE_LOW_FIRING_PENALTY;
 	}
-	else if (stats->firing >= 70)
+	else if (stats->firing >= PLAYER_AI_RANGE_HIGH_FIRING)
 	{
-		preferred += 1;
+		preferred += PLAYER_AI_RANGE_HIGH_FIRING_BONUS;
 	}
-	return Clamp(preferred, 3, 15);
+	return Clamp(preferred, PLAYER_AI_RANGE_MIN, PLAYER_AI_RANGE_MAX);
 }
 
 int PlayerFactionAI::scoreWeaponForUnit(BattleItem *weapon) const
 {
 	if (!weapon || !_save->canUseWeapon(weapon, _unit, false, BA_NONE))
 	{
-		return -100000;
+		return PLAYER_AI_REJECT_SCORE;
 	}
 
 	const RuleItem *rule = weapon->getRules();
 	const UnitStats *stats = _unit->getBaseStats();
 	if (rule->getBattleType() != BT_FIREARM && rule->getBattleType() != BT_MELEE)
 	{
-		return -100000;
+		return PLAYER_AI_REJECT_SCORE;
 	}
 
-	int score = rule->getPower() * 3;
-	score += rule->getAccuracySnap() * std::max(30, (int)stats->firing) / 60;
-	score += rule->getAccuracyAimed() * std::max(30, (int)stats->firing) / 90;
-	score += rule->getAccuracyAuto() * std::max(30, (int)stats->reactions) / 80;
+	int score = rule->getPower() * PLAYER_AI_WEAPON_POWER_SCORE;
+	score += rule->getAccuracySnap() * std::max(PLAYER_AI_WEAPON_MIN_SKILL, (int)stats->firing) / PLAYER_AI_WEAPON_SNAP_SCALE;
+	score += rule->getAccuracyAimed() * std::max(PLAYER_AI_WEAPON_MIN_SKILL, (int)stats->firing) / PLAYER_AI_WEAPON_AIMED_SCALE;
+	score += rule->getAccuracyAuto() * std::max(PLAYER_AI_WEAPON_MIN_SKILL, (int)stats->reactions) / PLAYER_AI_WEAPON_AUTO_SCALE;
 	if (rule->getBattleType() == BT_MELEE)
 	{
-		score += rule->getAccuracyMelee() * std::max(30, (int)stats->melee) / 70;
-		score -= 180;
+		score += rule->getAccuracyMelee() * std::max(PLAYER_AI_WEAPON_MIN_SKILL, (int)stats->melee) / PLAYER_AI_WEAPON_MELEE_SCALE;
+		score -= PLAYER_AI_WEAPON_MELEE_PENALTY;
 	}
 	if (weapon->getCurrentWaypoints() != 0)
 	{
-		score += 80;
+		score += PLAYER_AI_WEAPON_WAYPOINT_BONUS;
 	}
 	BattleActionAttack attack = BattleActionAttack::GetBeforeShoot(BA_SNAPSHOT, _unit, weapon);
 	BattleItem *ammo = weapon->getAmmoForAction(BA_SNAPSHOT);
 	if (ammo && ammo->getRules()->getExplosionRadius(attack) > 0)
 	{
-		score += ammo->getRules()->getExplosionRadius(attack) * 18;
+		score += ammo->getRules()->getExplosionRadius(attack) * PLAYER_AI_WEAPON_EXPLOSIVE_RADIUS_BONUS;
 	}
 	const int weight = weapon->getTotalWeight();
 	if (weight > stats->strength)
 	{
-		score -= (weight - stats->strength) * 25;
+		score -= (weight - stats->strength) * PLAYER_AI_WEAPON_OVERWEIGHT_PENALTY;
 	}
 	else
 	{
-		score -= weight * 2;
+		score -= weight * PLAYER_AI_WEAPON_WEIGHT_PENALTY;
 	}
 	if (!weapon->haveAnyAmmo() && weapon->isWeaponWithAmmo())
 	{
-		score -= 250;
+		score -= PLAYER_AI_WEAPON_NO_AMMO_PENALTY;
 	}
 	return score;
 }
@@ -1698,7 +1895,7 @@ bool PlayerFactionAI::tryEquipGroundWeapon(BattleItem *item)
 	}
 	const int previousScore = scoreWeaponForUnit(selectBestCarriedWeapon());
 	const int itemScore = scoreWeaponForUnit(item);
-	const int requiredGain = _knownEnemies ? 160 : 40;
+	const int requiredGain = _knownEnemies ? PLAYER_AI_EQUIP_CONTACT_REQUIRED_GAIN : PLAYER_AI_EQUIP_SAFE_REQUIRED_GAIN;
 	if (previousScore > -50000 && itemScore <= previousScore + requiredGain)
 	{
 		return false;
@@ -8456,12 +8653,12 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 		return reject(projectileRiskReason.empty() ? "ally_projectile_or_scatter_risk" : projectileRiskReason);
 	}
 
-	const int throwerPostThrowTU = proximity ? std::max(0, _unit->getTimeUnits() - action.Time - _unit->getActionTUs(BA_PRIME, grenade).Time - 4) : 0;
+	const int throwerPostThrowTU = proximity ? std::max(0, _unit->getTimeUnits() - action.Time - _unit->getActionTUs(BA_PRIME, grenade).Time - PLAYER_AI_PICKUP_TU_COST) : 0;
 	int enemiesAffected = 0;
 	int highValueEnemiesAffected = 0;
 	int evacuatableAllies = 0;
 	int riskyEvacuatableAllies = 0;
-	int score = proximity ? 20 : 0;
+	int score = proximity ? PLAYER_AI_GRENADE_PROXIMITY_BASE_SCORE : 0;
 	auto canEvacuateBlast = [&](BattleUnit *unit) -> bool
 	{
 		if (!unit || unit->isOut() || unit->getFaction() != _unit->getFaction())
@@ -8475,7 +8672,7 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 		}
 		const int requiredSteps = allySafetyRadius - dist + 1;
 		const int availableTU = (unit == _unit && proximity) ? throwerPostThrowTU : unit->getTimeUnits();
-		return availableTU >= std::max(8, requiredSteps * 6);
+		return availableTU >= std::max(PLAYER_AI_GRENADE_MIN_EVACUATE_TU, requiredSteps * PLAYER_AI_GRENADE_EVACUATE_TU_PER_STEP);
 	};
 	auto riskyBlastEvacuation = [&](BattleUnit *unit) -> bool
 	{
@@ -8489,8 +8686,8 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 			return false;
 		}
 		const int requiredSteps = allySafetyRadius - dist + 1;
-		const int requiredTU = std::max(8, requiredSteps * 6);
-		return dist <= std::max(1, allySafetyRadius / 2) || unit->getTimeUnits() < requiredTU + 10 || getSpottingUnits(unit->getPosition()) > 0;
+		const int requiredTU = std::max(PLAYER_AI_GRENADE_MIN_EVACUATE_TU, requiredSteps * PLAYER_AI_GRENADE_EVACUATE_TU_PER_STEP);
+		return dist <= std::max(1, allySafetyRadius / 2) || unit->getTimeUnits() < requiredTU + PLAYER_AI_GRENADE_RISKY_EVACUATE_EXTRA_TU || getSpottingUnits(unit->getPosition()) > 0;
 	};
 	for (auto *bu : *_save->getUnits())
 	{
@@ -8526,7 +8723,7 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 			{
 				++riskyEvacuatableAllies;
 			}
-		score -= 65 + std::max(0, radius - dist) * 18;
+			score -= PLAYER_AI_GRENADE_ALLY_BASE_PENALTY + std::max(0, radius - dist) * PLAYER_AI_GRENADE_ALLY_RADIUS_PENALTY;
 			continue;
 		}
 		if (validTarget(bu, true, true))
@@ -8539,26 +8736,26 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 			const int armor = std::max(std::max(bu->getArmor(SIDE_FRONT), bu->getArmor(SIDE_LEFT)), bu->getArmor(SIDE_RIGHT));
 			BattleItem *enemyWeapon = bu->getMainHandWeapon(false);
 			const int enemyWeaponDanger = playerAIWeaponDirectDanger(enemyWeapon);
-			int unitScore = 90;
+			int unitScore = PLAYER_AI_GRENADE_UNIT_BASE_SCORE;
 			unitScore += std::max(0, power - armor / 2);
-			unitScore += std::max(0, 90 - bu->getHealth());
+			unitScore += std::max(0, PLAYER_AI_GRENADE_WOUNDED_HEALTH_BONUS_BASE - bu->getHealth());
 			if (bu->getHealth() > PLAYER_AI_DURABLE_TARGET_HEALTH || armor >= power / 2)
 			{
-				unitScore += 110;
+				unitScore += PLAYER_AI_GRENADE_DURABLE_BONUS;
 			}
 			if (bu->getHealth() > PLAYER_AI_VERY_DURABLE_TARGET_HEALTH || armor >= power)
 			{
-				unitScore += 90;
+				unitScore += PLAYER_AI_GRENADE_VERY_DURABLE_BONUS;
 			}
 			if (enemyWeaponDanger > PLAYER_AI_PERCENT)
 			{
-				unitScore += std::min(160, enemyWeaponDanger - 70);
+				unitScore += std::min(PLAYER_AI_GRENADE_WEAPON_DANGER_BONUS_CAP, enemyWeaponDanger - PLAYER_AI_GRENADE_WEAPON_DANGER_BONUS_BASE);
 			}
 			if (bu->getHealth() > PLAYER_AI_DURABLE_TARGET_HEALTH || armor >= power / 2 || enemyWeaponDanger > PLAYER_AI_GRENADE_HIGH_VALUE_WEAPON_DANGER)
 			{
 				++highValueEnemiesAffected;
 			}
-			unitScore -= dist * 8;
+			unitScore -= dist * PLAYER_AI_GRENADE_TARGET_DISTANCE_PENALTY;
 			score += unitScore;
 		}
 	}
@@ -8566,7 +8763,7 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 	if (!proximity)
 	{
 		const int oldEfficacy = explosiveEfficacy(targetPos, _unit, radius, _attackAction.diff, true);
-		score += oldEfficacy * 120;
+		score += oldEfficacy * PLAYER_AI_GRENADE_OLD_EFFICACY_SCORE;
 		if (enemiesAffected == 0)
 		{
 			return reject("no_enemies_in_blast");
@@ -8578,7 +8775,7 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 			{
 				return reject(projectileRiskReason.empty() ? "scatter_risk_low_value_target" : projectileRiskReason);
 			}
-			if (score < 260 && enemiesAffected < 3 && highValueEnemiesAffected < 2)
+			if (score < PLAYER_AI_GRENADE_SCATTER_MIN_SCORE && enemiesAffected < 3 && highValueEnemiesAffected < 2)
 			{
 				return reject(projectileRiskReason.empty() ? "scatter_risk_margin_too_low" : projectileRiskReason);
 			}
@@ -8586,7 +8783,7 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 		if (riskyEvacuatableAllies > 0)
 		{
 			score -= riskyEvacuatableAllies * PLAYER_AI_GRENADE_RISKY_EVACUATION_PENALTY;
-			if (enemiesAffected < 2 && score < 360)
+			if (enemiesAffected < 2 && score < PLAYER_AI_GRENADE_RISKY_ALLY_MIN_SCORE)
 			{
 				return reject("ally_blast_margin_too_low");
 			}
@@ -8596,20 +8793,20 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 			BattleUnit *target = _save->getTile(targetPos)->getUnit();
 			if (!target || target->getFaction() == _unit->getFaction())
 			{
-				score -= 80;
+				score -= PLAYER_AI_GRENADE_SINGLE_EMPTY_TILE_PENALTY;
 			}
 			else
 			{
 				const int armor = std::max(std::max(target->getArmor(SIDE_FRONT), target->getArmor(SIDE_LEFT)), target->getArmor(SIDE_RIGHT));
 				BattleItem *enemyWeapon = target->getMainHandWeapon(false);
 				const int enemyWeaponDanger = playerAIWeaponDirectDanger(enemyWeapon);
-				if (target->getHealth() >= 60 || armor >= power / 2)
+				if (target->getHealth() >= PLAYER_AI_GRENADE_SINGLE_DURABLE_HEALTH || armor >= power / 2)
 				{
-					score += 150;
+					score += PLAYER_AI_GRENADE_SINGLE_DURABLE_BONUS;
 				}
-				if (target->getHealth() >= 100 || armor >= power || enemyWeaponDanger > 120)
+				if (target->getHealth() >= PLAYER_AI_VERY_DURABLE_TARGET_HEALTH || armor >= power || enemyWeaponDanger > PLAYER_AI_GRENADE_SINGLE_VERY_DURABLE_WEAPON)
 				{
-					score += 150;
+					score += PLAYER_AI_GRENADE_SINGLE_DURABLE_BONUS;
 				}
 			}
 		}
@@ -8643,8 +8840,8 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 	}
 
 	const bool logEarlyProximitySkips = Options::autoBattleLog
-		&& _save->getTurn() <= 3
-		&& _knownEnemies >= 8
+		&& _save->getTurn() <= PLAYER_AI_PROXIMITY_LOG_TURN_LIMIT
+		&& _knownEnemies >= PLAYER_AI_PROXIMITY_LOG_KNOWN_ENEMIES
 		&& !_visibleEnemies
 		&& !_spottingEnemies;
 	auto logSkip = [&](const std::string &reason, const Position &contactPos = Position(-1, -1, -1), const BattleRoomInfo *room = 0, int enemiesInRoom = 0)
@@ -8698,14 +8895,14 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			}
 			const int requiredSteps = std::max(1, radius - dist + 1);
 			const int availableTU = throwerAvailableTU >= 0 ? throwerAvailableTU : ally->getTimeUnits();
-			return availableTU < std::max(8, requiredSteps * 6);
+			return availableTU < std::max(PLAYER_AI_GRENADE_MIN_EVACUATE_TU, requiredSteps * PLAYER_AI_GRENADE_EVACUATE_TU_PER_STEP);
 		}
 		if (dist > radius + margin)
 		{
 			return false;
 		}
 		const int requiredSteps = std::max(1, radius - dist + 1);
-		return ally->getTimeUnits() < std::max(8, requiredSteps * 6);
+		return ally->getTimeUnits() < std::max(PLAYER_AI_GRENADE_MIN_EVACUATE_TU, requiredSteps * PLAYER_AI_GRENADE_EVACUATE_TU_PER_STEP);
 	};
 
 	Position stagedTarget;
@@ -8718,12 +8915,12 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 		stagedAction.type = BA_THROW;
 		stagedAction.target = stagedTarget;
 		stagedAction.updateTU();
-		stagedAction.Time += 4;
+		stagedAction.Time += PLAYER_AI_PICKUP_TU_COST;
 		stagedAction += _unit->getActionTUs(BA_PRIME, carriedMine);
 		const int stagedRadius = carriedMine->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(stagedAction));
 		const int throwAccuracy = BattleUnit::getFiringAccuracy(BattleActionAttack::GetBeforeShoot(stagedAction), _save->getMod());
-		const int throwLimit = std::max(6, throwAccuracy / 12);
-		const int effectiveThrowLimit = throwLimit + 1;
+		const int throwLimit = std::max(PLAYER_AI_PROXIMITY_THROW_LIMIT_MIN, throwAccuracy / PLAYER_AI_PROXIMITY_THROW_ACCURACY_DIVISOR);
+		const int effectiveThrowLimit = throwLimit + PLAYER_AI_PROXIMITY_STAGED_THROW_BONUS;
 		const int throwDist = Position::distance2d(stagedTarget, _unit->getPosition());
 		const int throwerPostThrowTU = std::max(0, _unit->getTimeUnits() - stagedAction.Time);
 		std::string blockedReason;
@@ -8740,19 +8937,19 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 		}
 		for (auto *ally : *_save->getUnits())
 		{
-			if (allyUnsafeForMine(ally, stagedTarget, stagedRadius, 1, throwerPostThrowTU))
+			if (allyUnsafeForMine(ally, stagedTarget, stagedRadius, PLAYER_AI_PROXIMITY_STAGED_THROW_BONUS, throwerPostThrowTU))
 			{
 				blocked = true;
 				blockedReason = ally == _unit ? "thrower_in_blast_zone" : "ally_cannot_evacuate";
 				break;
 			}
 		}
-		for (int dx = -(stagedRadius + 2); dx <= stagedRadius + 2 && !blocked; ++dx)
+		for (int dx = -(stagedRadius + PLAYER_AI_PROXIMITY_NEARBY_MINE_MARGIN); dx <= stagedRadius + PLAYER_AI_PROXIMITY_NEARBY_MINE_MARGIN && !blocked; ++dx)
 		{
-			for (int dy = -(stagedRadius + 2); dy <= stagedRadius + 2 && !blocked; ++dy)
+			for (int dy = -(stagedRadius + PLAYER_AI_PROXIMITY_NEARBY_MINE_MARGIN); dy <= stagedRadius + PLAYER_AI_PROXIMITY_NEARBY_MINE_MARGIN && !blocked; ++dy)
 			{
 				Position check(stagedTarget.x + dx, stagedTarget.y + dy, stagedTarget.z);
-				if (Position::distance2d(check, stagedTarget) > stagedRadius + 2)
+				if (Position::distance2d(check, stagedTarget) > stagedRadius + PLAYER_AI_PROXIMITY_NEARBY_MINE_MARGIN)
 				{
 					continue;
 				}
@@ -8775,7 +8972,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 		if (!blocked)
 		{
 			Position originVoxel = _save->getTileEngine()->getOriginVoxel(stagedAction, 0);
-			Position targetVoxel = stagedTarget.toVoxel() + Position(8, 8, (2 + -targetTile->getTerrainLevel()));
+			Position targetVoxel = stagedTarget.toVoxel() + Position(PLAYER_AI_THROW_TARGET_VOXEL_XY, PLAYER_AI_THROW_TARGET_VOXEL_XY, (PLAYER_AI_THROW_TARGET_VOXEL_Z_BASE + -targetTile->getTerrainLevel()));
 			if (!_save->getTileEngine()->validateThrow(stagedAction, originVoxel, targetVoxel, _save->getDepth()))
 			{
 				blocked = true;
@@ -8861,11 +9058,11 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			++activeHostiles;
 		}
 	}
-	const bool earlyPressureFieldMine = _save->getTurn() <= 3
-		&& _knownEnemies >= 8
+	const bool earlyPressureFieldMine = _save->getTurn() <= PLAYER_AI_PROXIMITY_LOG_TURN_LIMIT
+		&& _knownEnemies >= PLAYER_AI_PROXIMITY_LOG_KNOWN_ENEMIES
 		&& !_visibleEnemies
 		&& !_spottingEnemies
-		&& activeHostiles >= std::max(8, activeAllies / 2);
+		&& activeHostiles >= std::max(PLAYER_AI_PROXIMITY_EARLY_HOSTILE_MIN, activeAllies / 2);
 	bool projectedFieldContact = false;
 	if (contactPos.z != _unit->getPosition().z)
 	{
@@ -8907,8 +9104,8 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 	}
 	const int entries = (int)room->entryPositions.size();
 	const bool mineableRoom = !room->isOutside
-		&& ((!room->isHall && room->tileCount <= 160 && entries > 0 && entries <= 32)
-			|| (room->isHall && room->tileCount <= 80 && entries > 0 && entries <= 18));
+		&& ((!room->isHall && room->tileCount <= PLAYER_AI_PROXIMITY_ROOM_TILE_LIMIT && entries > 0 && entries <= PLAYER_AI_PROXIMITY_ROOM_ENTRY_LIMIT)
+			|| (room->isHall && room->tileCount <= PLAYER_AI_PROXIMITY_HALL_TILE_LIMIT && entries > 0 && entries <= PLAYER_AI_PROXIMITY_HALL_ENTRY_LIMIT));
 	if (visibleContact || _visibleEnemies > 0)
 	{
 		logSkip("visible_contact", contactPos, room, enemiesInRoom);
@@ -8938,34 +9135,34 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			|| !mineableRoom
 			|| room->isOutside
 			|| room->isHall
-			|| entries > 8
-			|| room->tileCount > 120
-			|| bestAllyDistance >= 7);
+			|| entries > PLAYER_AI_PROXIMITY_FIELD_ENTRY_LIMIT
+			|| room->tileCount > PLAYER_AI_PROXIMITY_FIELD_ROOM_TILE_LIMIT
+			|| bestAllyDistance >= PLAYER_AI_PROXIMITY_FIELD_ALLY_DISTANCE);
 	if (!mineableRoom && !fieldMine)
 	{
 		logSkip("room_not_mineable", contactPos, room, enemiesInRoom);
 		return false;
 	}
-	bool mineWorthyContact = enemiesInRoom >= 2
+	bool mineWorthyContact = enemiesInRoom >= PLAYER_AI_PROXIMITY_WORTH_ENEMIES
 		|| fieldMine
-		|| entries <= 3
-		|| contactHealth >= 80
-		|| contactArmor >= std::max(0, carriedMine->getRules()->getPower() * 2 / 3)
-		|| contactThreat >= (fieldMine ? 120 : 145);
+		|| entries <= PLAYER_AI_PROXIMITY_WORTH_ENTRY_LIMIT
+		|| contactHealth >= PLAYER_AI_PROXIMITY_WORTH_HEALTH
+		|| contactArmor >= std::max(0, carriedMine->getRules()->getPower() * PLAYER_AI_PROXIMITY_ARMOR_POWER_NUM / PLAYER_AI_PROXIMITY_ARMOR_POWER_DEN)
+		|| contactThreat >= (fieldMine ? PLAYER_AI_PROXIMITY_FIELD_THREAT : PLAYER_AI_PROXIMITY_ROOM_THREAT);
 	if (!mineWorthyContact)
 	{
 		logSkip("low_value_contact", contactPos, room, enemiesInRoom);
 		return false;
 	}
 
-	int enemyMoveRadius = 10 + std::min(6, enemiesInRoom * 2);
+	int enemyMoveRadius = PLAYER_AI_PROXIMITY_BASE_MOVE_RADIUS + std::min(PLAYER_AI_PROXIMITY_MOVE_RADIUS_ENEMY_CAP, enemiesInRoom * PLAYER_AI_PROXIMITY_MOVE_RADIUS_PER_ENEMY);
 	if (Tile *contactTile = _save->getTile(contactPos))
 	{
 		if (BattleUnit *contactUnit = contactTile->getUnit())
 		{
 			if (contactUnit->getFaction() == FACTION_HOSTILE && contactUnit->getBaseStats())
 			{
-				enemyMoveRadius = std::max(6, std::min(18, contactUnit->getBaseStats()->tu / 4));
+				enemyMoveRadius = std::max(PLAYER_AI_PROXIMITY_MOVE_RADIUS_MIN, std::min(PLAYER_AI_PROXIMITY_MOVE_RADIUS_MAX, contactUnit->getBaseStats()->tu / PLAYER_AI_PROXIMITY_MOVE_RADIUS_TU_DIVISOR));
 			}
 		}
 	}
@@ -9194,7 +9391,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 		action.weapon = mine;
 		action.type = BA_THROW;
 		action.updateTU();
-		action.Time += 4;
+		action.Time += PLAYER_AI_PICKUP_TU_COST;
 		action += _unit->getActionTUs(BA_PRIME, mine);
 		if (!action.haveTU())
 		{
@@ -9207,8 +9404,8 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			continue;
 		}
 		const int throwAccuracy = BattleUnit::getFiringAccuracy(BattleActionAttack::GetBeforeShoot(action), _save->getMod());
-		const int throwLimit = std::max(6, throwAccuracy / 12);
-		const int effectiveThrowLimit = throwLimit + (fieldMine ? 1 : 0);
+		const int throwLimit = std::max(PLAYER_AI_PROXIMITY_THROW_LIMIT_MIN, throwAccuracy / PLAYER_AI_PROXIMITY_THROW_ACCURACY_DIVISOR);
+		const int effectiveThrowLimit = throwLimit + (fieldMine ? PLAYER_AI_PROXIMITY_STAGED_THROW_BONUS : 0);
 		Position originVoxel = _save->getTileEngine()->getOriginVoxel(action, 0);
 		for (const auto &target : candidates)
 		{
@@ -9220,7 +9417,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			}
 			const int throwDist = Position::distance2d(target, _unit->getPosition());
 			const int throwerPostThrowTU = std::max(0, _unit->getTimeUnits() - action.Time);
-			if (tileHasNearbyProximityMine(target, radius + 2))
+			if (tileHasNearbyProximityMine(target, radius + PLAYER_AI_PROXIMITY_NEARBY_MINE_MARGIN))
 			{
 				++proximityBlockedNearbyMine;
 				continue;
@@ -9232,7 +9429,10 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			}
 			const int contactDist = Position::distance2d(target, contactPos);
 			const int pathProgress = Position::distance2d(contactPos, allyAnchor) - Position::distance2d(target, allyAnchor);
-			int tacticalScore = 115 + radius * 10 + std::min(90, enemiesInRoom * 40) + std::min(90, contactThreat / 3);
+			int tacticalScore = PLAYER_AI_PROXIMITY_TACTICAL_BASE_SCORE
+				+ radius * PLAYER_AI_PROXIMITY_RADIUS_SCORE
+				+ std::min(PLAYER_AI_PROXIMITY_ROOM_ENEMY_SCORE_CAP, enemiesInRoom * PLAYER_AI_PROXIMITY_ROOM_ENEMY_SCORE)
+				+ std::min(PLAYER_AI_PROXIMITY_THREAT_SCORE_CAP, contactThreat / PLAYER_AI_PROXIMITY_THREAT_SCORE_DIVISOR);
 			if (fieldMine)
 			{
 				const Position unitPos = _unit->getPosition();
@@ -9245,28 +9445,28 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 				const int unitContactDist = std::max(1, Position::distance2d(unitPos, contactPos));
 				if (dot <= 0)
 				{
-					tacticalScore -= 140;
+					tacticalScore -= PLAYER_AI_PROXIMITY_BEHIND_TARGET_PENALTY;
 				}
 				else
 				{
-					tacticalScore += std::min(95, dot / 2);
-					tacticalScore -= std::min(130, cross * 3 / unitContactDist);
+					tacticalScore += std::min(PLAYER_AI_PROXIMITY_DOT_SCORE_CAP, dot / PLAYER_AI_PROXIMITY_DOT_SCORE_DIVISOR);
+					tacticalScore -= std::min(PLAYER_AI_PROXIMITY_CROSS_PENALTY_CAP, cross * PLAYER_AI_PROXIMITY_CROSS_PENALTY / unitContactDist);
 				}
 			}
-			tacticalScore += std::max(0, pathProgress) * 8;
-			tacticalScore += std::min(60, throwAccuracy - 50);
-			tacticalScore += entries <= 2 ? 45 : 0;
-			tacticalScore += (fieldMine || _factionAI->getRoomIdAt(target) != room->id) ? 35 : 0;
-			tacticalScore -= std::max(0, contactDist - enemyMoveRadius) * 15;
-			tacticalScore -= contactDist <= 1 ? 70 : 0;
-			tacticalScore -= fieldMine ? std::max(0, 7 - Position::distance2d(target, allyAnchor)) * 30 : 0;
+			tacticalScore += std::max(0, pathProgress) * PLAYER_AI_PROXIMITY_PATH_PROGRESS_SCORE;
+			tacticalScore += std::min(PLAYER_AI_PROXIMITY_THROW_ACCURACY_SCORE_CAP, throwAccuracy - PLAYER_AI_PROXIMITY_THROW_ACCURACY_BASE);
+			tacticalScore += entries <= PLAYER_AI_PROXIMITY_NARROW_ENTRY_LIMIT ? PLAYER_AI_PROXIMITY_NARROW_ENTRY_BONUS : 0;
+			tacticalScore += (fieldMine || _factionAI->getRoomIdAt(target) != room->id) ? PLAYER_AI_PROXIMITY_ROOM_EXIT_BONUS : 0;
+			tacticalScore -= std::max(0, contactDist - enemyMoveRadius) * PLAYER_AI_PROXIMITY_CONTACT_OVERSHOOT_PENALTY;
+			tacticalScore -= contactDist <= PLAYER_AI_PROXIMITY_CONTACT_CLOSE_LIMIT ? PLAYER_AI_PROXIMITY_CONTACT_CLOSE_PENALTY : 0;
+			tacticalScore -= fieldMine ? std::max(0, PLAYER_AI_PROXIMITY_FIELD_ALLY_SAFE_DISTANCE - Position::distance2d(target, allyAnchor)) * PLAYER_AI_PROXIMITY_FIELD_ALLY_PENALTY : 0;
 			if (!room->isHall)
 			{
-				tacticalScore += 25;
+				tacticalScore += PLAYER_AI_PROXIMITY_NON_HALL_BONUS;
 			}
-			const bool lowAccuracyTooFar = throwAccuracy < 65
+			const bool lowAccuracyTooFar = throwAccuracy < PLAYER_AI_PROXIMITY_LOW_THROW_ACCURACY
 				&& throwDist > (fieldMine ? std::max(5, effectiveThrowLimit - 1) : 4);
-			const bool relaxedFieldMineThrow = fieldMine && _knownEnemies >= 12;
+			const bool relaxedFieldMineThrow = fieldMine && _knownEnemies >= PLAYER_AI_PROXIMITY_FIELD_RELAXED_KNOWN_ENEMIES;
 			if (throwDist > effectiveThrowLimit || (lowAccuracyTooFar && !relaxedFieldMineThrow))
 			{
 				++proximityBlockedTooFar;
@@ -9282,7 +9482,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 				continue;
 			}
 			action.target = target;
-			Position targetVoxel = target.toVoxel() + Position(8, 8, (2 + -tile->getTerrainLevel()));
+			Position targetVoxel = target.toVoxel() + Position(PLAYER_AI_THROW_TARGET_VOXEL_XY, PLAYER_AI_THROW_TARGET_VOXEL_XY, (PLAYER_AI_THROW_TARGET_VOXEL_Z_BASE + -tile->getTerrainLevel()));
 			if (!_save->getTileEngine()->validateThrow(action, originVoxel, targetVoxel, _save->getDepth()))
 			{
 				++proximityBlockedInvalidThrow;
@@ -9298,7 +9498,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 				continue;
 			}
 			int score = scorePlayerGrenadeTarget(mine, target, radius, true);
-			if (score < -50000)
+			if (score < PLAYER_AI_GRENADE_REJECT_CUTOFF)
 			{
 				++proximityBlockedScore;
 				continue;
@@ -9315,9 +9515,9 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 		}
 	}
 
-	if (bestAction.type == BA_RETHINK || bestScore < 140)
+	if (bestAction.type == BA_RETHINK || bestScore < PLAYER_AI_PROXIMITY_MIN_SCORE)
 	{
-		if (bestStageMine && bestStageScore >= 145 && !_reachable.empty())
+		if (bestStageMine && bestStageScore >= PLAYER_AI_PROXIMITY_STAGE_MIN_SCORE && !_reachable.empty())
 		{
 			auto coverScoreAt = [&](const Position &pos) -> int
 			{
@@ -9428,7 +9628,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 					bestStageMoveTU = moveTU;
 				}
 			}
-			if (bestStageMoveScore >= 165)
+			if (bestStageMoveScore >= PLAYER_AI_PROXIMITY_STAGE_MOVE_MIN_SCORE)
 			{
 				_attackAction.actor = _unit;
 				_attackAction.weapon = selectBestCarriedWeapon();
@@ -9604,7 +9804,7 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 		action.actor = _unit;
 		action.target = baseTarget;
 		action.updateTU();
-		action.Time += 4;
+		action.Time += PLAYER_AI_PICKUP_TU_COST;
 		action += _unit->getActionTUs(BA_PRIME, grenade);
 		if (!action.haveTU())
 		{
@@ -9627,7 +9827,7 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 			return;
 		}
 		const int throwAccuracy = BattleUnit::getFiringAccuracy(BattleActionAttack::GetBeforeShoot(action), _save->getMod());
-		const int throwLimit = std::max(6, throwAccuracy / 12);
+		const int throwLimit = std::max(PLAYER_AI_PROXIMITY_THROW_LIMIT_MIN, throwAccuracy / PLAYER_AI_PROXIMITY_THROW_ACCURACY_DIVISOR);
 		std::vector<std::pair<Position, int>> shifts;
 		if (proximity)
 		{
@@ -9684,7 +9884,7 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 				directAction.type = BA_SNAPSHOT;
 				directAction.target = baseTargetUnit->getPosition();
 				Position shotOrigin = _save->getTileEngine()->getOriginVoxel(directAction, 0);
-				Position shotTarget = baseTargetUnit->getPosition().toVoxel() + Position(8, 8, 10);
+				Position shotTarget = baseTargetUnit->getPosition().toVoxel() + Position(PLAYER_AI_THROW_TARGET_VOXEL_XY, PLAYER_AI_THROW_TARGET_VOXEL_XY, 10);
 				Tile *directTile = baseTargetUnit->getTile();
 				const bool directLine = directTile && _save->getTileEngine()->canTargetUnit(&shotOrigin, directTile, &shotTarget, _unit, false, baseTargetUnit);
 				BattleActionAttack directAttack = BattleActionAttack::GetBeforeShoot(directAction);
@@ -9703,7 +9903,7 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 			{
 				continue;
 			}
-			Position targetVoxel = targetTile.toVoxel() + Position(8,8, (2 + -tile->getTerrainLevel()));
+			Position targetVoxel = targetTile.toVoxel() + Position(PLAYER_AI_THROW_TARGET_VOXEL_XY, PLAYER_AI_THROW_TARGET_VOXEL_XY, (PLAYER_AI_THROW_TARGET_VOXEL_Z_BASE + -tile->getTerrainLevel()));
 			if (_save->getTileEngine()->validateThrow(action, originVoxel, targetVoxel, _save->getDepth()))
 			{
 				hadValidThrowPath = true;
@@ -9764,7 +9964,7 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 						score -= teamSpotted ? 220 : 150;
 					}
 				}
-				if (score < -50000)
+				if (score < PLAYER_AI_GRENADE_REJECT_CUTOFF)
 				{
 					++grenadeScoreRejected;
 					noteGrenadeReject(grenade, targetTile, rejectReason.empty() ? "score_rejected" : rejectReason, score);
@@ -9895,11 +10095,11 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 			stagedThrow.type = BA_THROW;
 			stagedThrow.target = bestRejectedTarget;
 			stagedThrow.updateTU();
-			stagedThrow.Time += 4;
+			stagedThrow.Time += PLAYER_AI_PICKUP_TU_COST;
 			stagedThrow += _unit->getActionTUs(BA_PRIME, bestRejectedItem);
 			const int radius = bestRejectedItem->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(stagedThrow));
 			const int throwAccuracy = BattleUnit::getFiringAccuracy(BattleActionAttack::GetBeforeShoot(stagedThrow), _save->getMod());
-			const int throwLimit = std::max(6, throwAccuracy / 12);
+			const int throwLimit = std::max(PLAYER_AI_PROXIMITY_THROW_LIMIT_MIN, throwAccuracy / PLAYER_AI_PROXIMITY_THROW_ACCURACY_DIVISOR);
 			const int currentThrowDist = Position::distance2d(_unit->getPosition(), bestRejectedTarget);
 			Position bestStagePos;
 			int bestStageScore = -100000;
