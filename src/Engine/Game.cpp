@@ -62,6 +62,13 @@ Game::Game(const std::string &title) : _screen(0), _cursor(0), _lang(0), _save(0
 	Options::reload = false;
 	Options::mute = false;
 
+	if (Options::autoBattleHeadless)
+	{
+		static char dummyVideoDriver[] = "SDL_VIDEODRIVER=dummy";
+		SDL_putenv(dummyVideoDriver);
+		Options::captureMouse = SDL_GRAB_OFF;
+	}
+
 	// Initialize SDL
 	if (SDL_Init(SDL_INIT_VIDEO) < 0)
 	{
@@ -346,7 +353,7 @@ void Game::run()
 				_timeUntilNextFrame = 0;
 			}
 
-			if (_init && _timeUntilNextFrame <= 0)
+			if (_init && !Options::autoBattleHeadless && _timeUntilNextFrame <= 0)
 			{
 				// make a note of when this frame update occurred.
 				_timeOfLastFrame = SDL_GetTicks();

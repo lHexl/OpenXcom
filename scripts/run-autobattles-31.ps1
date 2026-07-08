@@ -33,6 +33,7 @@ $jobs = foreach ($run in 1..$runsPerSave) {
             '-load', "$save.sav",
             '-playIntro', 'false',
             '-autoBattle', 'true',
+            '-autoBattleHeadless', 'true',
             '-autoQuitAfterBattle', 'true',
             '-autoBattleLog', 'true',
             '-autoBattleDisablePlayerPanic', 'true',

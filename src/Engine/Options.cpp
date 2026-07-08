@@ -262,6 +262,7 @@ void createAdvancedOptionsOXC()
 	_info.push_back(OptionInfo(OPTION_OXC, "battleExplosionHeight", &battleExplosionHeight, 0, "STR_BATTLEEXPLOSIONHEIGHT", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo(OPTION_OXC, "battleAutoEnd", &battleAutoEnd, false, "STR_BATTLEAUTOEND", "STR_BATTLESCAPE"));
 	_info.push_back(OptionInfo(OPTION_OXCE, "autoBattle", &autoBattle, false));
+	_info.push_back(OptionInfo(OPTION_OXCE, "autoBattleHeadless", &autoBattleHeadless, false));
 	_info.push_back(OptionInfo(OPTION_OXCE, "autoBattleSeed", &autoBattleSeed, ""));
 	_info.push_back(OptionInfo(OPTION_OXCE, "autoQuitAfterBattle", &autoQuitAfterBattle, false));
 	_info.push_back(OptionInfo(OPTION_OXCE, "autoBattleLog", &autoBattleLog, false));
@@ -1259,6 +1260,10 @@ void updateOptions()
 	{
 		battleAutoEnd = true;
 		skipNextTurnScreen = true;
+	}
+	else
+	{
+		autoBattleHeadless = false;
 	}
 }
 
