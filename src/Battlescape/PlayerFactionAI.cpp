@@ -81,6 +81,17 @@ struct PendingPlayerProximityMineStaging
 
 std::vector<PendingPlayerProximityMineStaging> pendingPlayerProximityMineStagings;
 
+struct PendingPlayerSmokePlan
+{
+	SavedBattleGame *save;
+	int turn;
+	UnitFaction faction;
+	Position contact;
+	Position target;
+};
+
+std::vector<PendingPlayerSmokePlan> pendingPlayerSmokePlans;
+
 struct PlayerMovementMemory
 {
 	SavedBattleGame *save;
@@ -371,6 +382,37 @@ constexpr int PLAYER_AI_PROXIMITY_FIELD_RELAXED_KNOWN_ENEMIES = 12; // Known ene
 constexpr int PLAYER_AI_PROXIMITY_MIN_SCORE = 140; // Минимальный score для немедленной постановки proximity mine.
 constexpr int PLAYER_AI_PROXIMITY_STAGE_MIN_SCORE = 145; // Минимальный score staged mine target.
 constexpr int PLAYER_AI_PROXIMITY_STAGE_MOVE_MIN_SCORE = 165; // Минимальный score движения для staged mine.
+constexpr int PLAYER_AI_SMOKE_MEMORY_TURNS = 5; // Сколько ходов smoke plan считается актуальным, чтобы не задымлять одну точку повторно.
+constexpr int PLAYER_AI_SMOKE_CONTACT_MEMORY_DISTANCE = 14; // Дистанция совпадения enemy contact для smoke memory.
+constexpr int PLAYER_AI_SMOKE_TARGET_MEMORY_DISTANCE = 10; // Дистанция совпадения smoke target для smoke memory.
+constexpr int PLAYER_AI_SMOKE_MIN_RADIUS = 2; // Минимальный radius, при котором grenade считается полезной дымовой.
+constexpr int PLAYER_AI_SMOKE_PICKUP_TU_BUFFER = 0; // Дополнительный TU буфер для smoke throw сверх pickup/prime.
+constexpr int PLAYER_AI_SMOKE_MIN_THROW_RESERVE = 4; // Минимальный TU остаток после броска дыма.
+constexpr int PLAYER_AI_SMOKE_INITIAL_TURN_LIMIT = 3; // Ходы, когда smoke screen особо полезен для выхода из стартовой зоны.
+constexpr int PLAYER_AI_SMOKE_INITIAL_KNOWN_ENEMIES = 3; // Known enemies для раннего smoke screen даже без spotting.
+constexpr int PLAYER_AI_SMOKE_PRESSURE_EXPOSURE = 90; // Exposure, с которого дым можно бросать под прямым давлением.
+constexpr int PLAYER_AI_SMOKE_HIGH_EXPOSURE = 120; // Exposure, с которого дым почти всегда оправдан без хорошего выстрела.
+constexpr int PLAYER_AI_SMOKE_SUPPORT_IDLE_MIN_ALLIES = 5; // Размер отряда, при котором idle/hold в начале может инициировать дым.
+constexpr int PLAYER_AI_SMOKE_ROOM_ENTRY_LIMIT = 4; // Максимум входов в комнату, при котором smoke breach наиболее полезен.
+constexpr int PLAYER_AI_SMOKE_ROOM_TILE_LIMIT = 160; // Максимальный размер комнаты для smoke breach.
+constexpr int PLAYER_AI_SMOKE_TARGET_SMOKE_LIMIT = 0; // Если target tile уже задымлен, повторный дым не нужен.
+constexpr int PLAYER_AI_SMOKE_MAX_THROW_DISTANCE = 10; // Максимальная дистанция до smoke target, чтобы не бросать дым в дальний контакт.
+constexpr int PLAYER_AI_SMOKE_ALLY_BLIND_RADIUS = 2; // Радиус вокруг союзника, куда нельзя класть центр дыма.
+constexpr int PLAYER_AI_SMOKE_ALLY_BLIND_PENALTY = 180; // Штраф за задымление союзника/огневой позиции.
+constexpr int PLAYER_AI_SMOKE_FIRELINE_SCORE = 90; // Бонус target, который снижает текущие fire lines.
+constexpr int PLAYER_AI_SMOKE_SPOTTER_SCORE = 120; // Бонус target при текущем spotting.
+constexpr int PLAYER_AI_SMOKE_EXPOSURE_SCORE_DIVISOR = 2; // Делитель current exposure для smoke score.
+constexpr int PLAYER_AI_SMOKE_CONTACT_DISTANCE_SCORE = 6; // Вес близости smoke target к contact.
+constexpr int PLAYER_AI_SMOKE_SELF_DISTANCE_PENALTY = 7; // Штраф за дальность броска дыма от unit.
+constexpr int PLAYER_AI_SMOKE_CENTER_PATH_BONUS = 45; // Бонус за target между unit/отрядом и contact.
+constexpr int PLAYER_AI_SMOKE_ENTRY_BONUS = 80; // Бонус entry tile при smoke breach.
+constexpr int PLAYER_AI_SMOKE_INITIAL_BONUS = 70; // Бонус раннего выхода из стартовой зоны.
+constexpr int PLAYER_AI_SMOKE_SIEGE_BONUS = 85; // Бонус smoke breach для siege room.
+constexpr int PLAYER_AI_SMOKE_SURVIVE_BONUS = 100; // Бонус дыма в survive/retreat.
+constexpr int PLAYER_AI_SMOKE_GOOD_SHOT_VISIBLE_LIMIT = 1; // Видимые враги, при которых дым запрещен если есть хороший выстрел.
+constexpr int PLAYER_AI_SMOKE_MIN_SCORE = 260; // Минимальный score для аварийного броска дыма.
+constexpr int PLAYER_AI_SMOKE_BREACH_MIN_SCORE = 200; // Минимальный score для smoke breach у опасной комнаты.
+constexpr int PLAYER_AI_SMOKE_INITIAL_MIN_SCORE = 180; // Минимальный score для стартового smoke screen.
 constexpr double PLAYER_AI_GEOMETRY_EPSILON = 0.1; // Малый epsilon для проверок вырожденных 2D-векторов.
 
 const char *battleTypeName(BattleType type)
@@ -925,6 +967,67 @@ void recordPlayerProximityMinePlan(SavedBattleGame *save, UnitFaction faction, c
 	}
 	PendingPlayerProximityMinePlan plan = { save, save->getTurn(), faction, contact, target };
 	pendingPlayerProximityMinePlans.push_back(plan);
+}
+
+void cleanupPendingPlayerSmokePlans(SavedBattleGame *save)
+{
+	if (!save)
+	{
+		pendingPlayerSmokePlans.clear();
+		return;
+	}
+	const int turn = save->getTurn();
+	pendingPlayerSmokePlans.erase(std::remove_if(pendingPlayerSmokePlans.begin(), pendingPlayerSmokePlans.end(),
+		[save, turn](const PendingPlayerSmokePlan &plan)
+		{
+			return plan.save != save || plan.turn + PLAYER_AI_SMOKE_MEMORY_TURNS < turn;
+		}), pendingPlayerSmokePlans.end());
+	if (pendingPlayerSmokePlans.size() > PLAYER_AI_MEMORY_LIMIT_SMALL)
+	{
+		pendingPlayerSmokePlans.erase(pendingPlayerSmokePlans.begin(), pendingPlayerSmokePlans.end() - PLAYER_AI_MEMORY_LIMIT_SMALL);
+	}
+}
+
+bool isRecentPlayerSmokePlan(SavedBattleGame *save, UnitFaction faction, const Position &contact, const Position &target)
+{
+	cleanupPendingPlayerSmokePlans(save);
+	for (const auto &plan : pendingPlayerSmokePlans)
+	{
+		if (plan.faction == faction
+			&& plan.contact.z == contact.z
+			&& plan.target.z == target.z
+			&& Position::distance2d(plan.contact, contact) <= PLAYER_AI_SMOKE_CONTACT_MEMORY_DISTANCE
+			&& Position::distance2d(plan.target, target) <= PLAYER_AI_SMOKE_TARGET_MEMORY_DISTANCE)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void recordPlayerSmokePlan(SavedBattleGame *save, UnitFaction faction, const Position &contact, const Position &target)
+{
+	if (!save)
+	{
+		return;
+	}
+	cleanupPendingPlayerSmokePlans(save);
+	if (isRecentPlayerSmokePlan(save, faction, contact, target))
+	{
+		return;
+	}
+	PendingPlayerSmokePlan plan = { save, save->getTurn(), faction, contact, target };
+	pendingPlayerSmokePlans.push_back(plan);
+}
+
+bool isPlayerSmokeGrenade(const BattleItem *item)
+{
+	return item
+		&& item->getRules()
+		&& item->getRules()->isGrenadeOrProxy()
+		&& item->getRules()->getBattleType() != BT_PROXIMITYGRENADE
+		&& item->getRules()->getDamageType()
+		&& item->getRules()->getDamageType()->ResistType == DT_SMOKE;
 }
 
 bool isPendingPlayerGrenadeDanger(SavedBattleGame *save, UnitFaction faction, const Position &pos)
@@ -4981,6 +5084,14 @@ void PlayerFactionAI::setupAttack()
 	if (_unit->getFaction() == FACTION_PLAYER
 		&& _grenade
 		&& !_visibleEnemies
+		&& setupSmokeScreen())
+	{
+		return;
+	}
+
+	if (_unit->getFaction() == FACTION_PLAYER
+		&& _grenade
+		&& !_visibleEnemies
 		&& !_spottingEnemies
 		&& setupProximityMineAmbush())
 	{
@@ -5179,6 +5290,12 @@ void PlayerFactionAI::setupAttack()
 				Log(LOG_INFO) << "Attack estimation desires to move to " << _attackAction.target;
 			}
 		}
+		return;
+	}
+	else if (_unit->getFaction() == FACTION_PLAYER
+		&& _grenade
+		&& setupSmokeScreen())
+	{
 		return;
 	}
 	else if (_unit->getFaction() == FACTION_PLAYER
@@ -7571,6 +7688,321 @@ bool PlayerFactionAI::setupFallbackCoverMove(int minScore, int minExposureGain, 
 			<< ", fireLines=" << currentFireLines << "->" << bestFireLines
 			<< ", cover=" << currentCover << "->" << bestCover
 			<< ", maxMove=" << maxFallbackDistance;
+		_save->appendToAutoBattleLog(log.str());
+	}
+	return true;
+}
+
+bool PlayerFactionAI::setupSmokeScreen()
+{
+	if (_unit->getFaction() != FACTION_PLAYER || !_factionAI || !_grenade)
+	{
+		return false;
+	}
+	if (_attackAction.type != BA_RETHINK)
+	{
+		return false;
+	}
+
+	BattleItem *smoke = 0;
+	int smokeRadius = 0;
+	BattleAction smokeAction;
+	for (auto *item : *_unit->getInventory())
+	{
+		if (!isPlayerSmokeGrenade(item))
+		{
+			continue;
+		}
+		BattleAction probe;
+		probe.actor = _unit;
+		probe.weapon = item;
+		probe.type = BA_THROW;
+		probe.updateTU();
+		probe.Time += PLAYER_AI_PICKUP_TU_COST + PLAYER_AI_SMOKE_PICKUP_TU_BUFFER;
+		probe += _unit->getActionTUs(BA_PRIME, item);
+		if (!probe.haveTU() || _unit->getTimeUnits() - probe.Time < PLAYER_AI_SMOKE_MIN_THROW_RESERVE)
+		{
+			continue;
+		}
+		const int radius = item->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(probe));
+		if (radius < PLAYER_AI_SMOKE_MIN_RADIUS)
+		{
+			continue;
+		}
+		if (!smoke || radius > smokeRadius)
+		{
+			smoke = item;
+			smokeRadius = radius;
+			smokeAction = probe;
+		}
+	}
+	if (!smoke)
+	{
+		return false;
+	}
+
+	const PlayerFactionStrategy strategy = getFactionStrategy();
+	Position contactPos;
+	const BattleRoomInfo *contactRoom = 0;
+	int enemiesInRoom = 0;
+	bool visibleContact = false;
+	const bool hasContact = _factionAI->getBestEnemyContactPosition(&contactPos, &contactRoom, &enemiesInRoom, &visibleContact);
+	if (!hasContact)
+	{
+		return false;
+	}
+	if (contactPos.z != _unit->getPosition().z)
+	{
+		Position projected(contactPos.x, contactPos.y, _unit->getPosition().z);
+		if (!_save->getTile(projected))
+		{
+			return false;
+		}
+		contactPos = projected;
+	}
+
+	const Position current = _unit->getPosition();
+	const int currentSpotters = getSpottingUnits(current);
+	const int currentExposure = getEnemyFireExposure(current);
+	const int currentFireLines = countEnemyFireLines(current);
+	int activeAllies = 0;
+	for (auto *other : *_save->getUnits())
+	{
+		if (other && !other->isOut() && other->getFaction() == _unit->getFaction())
+		{
+			++activeAllies;
+		}
+	}
+	const bool directPressure = currentSpotters > 0 || currentFireLines > 0 || currentExposure >= PLAYER_AI_SMOKE_PRESSURE_EXPOSURE;
+	const bool highPressure = currentExposure >= PLAYER_AI_SMOKE_HIGH_EXPOSURE || currentSpotters >= PLAYER_AI_NEARBY_SPOTTER_LIMIT || currentFireLines > 0;
+	const bool earlyDeploySmoke = _save->getTurn() <= PLAYER_AI_SMOKE_INITIAL_TURN_LIMIT
+		&& _knownEnemies >= PLAYER_AI_SMOKE_INITIAL_KNOWN_ENEMIES
+		&& !_visibleEnemies
+		&& activeAllies >= PLAYER_AI_SMOKE_SUPPORT_IDLE_MIN_ALLIES;
+	const bool roomBreachSmoke = strategy == PFS_SIEGE_ROOM
+		&& contactRoom
+		&& !contactRoom->isOutside
+		&& contactRoom->tileCount <= PLAYER_AI_SMOKE_ROOM_TILE_LIMIT
+		&& (int)contactRoom->entryPositions.size() > 0
+		&& (int)contactRoom->entryPositions.size() <= PLAYER_AI_SMOKE_ROOM_ENTRY_LIMIT;
+
+	bool allowedByStrategy = false;
+	switch (strategy)
+	{
+	case PFS_INITIAL_DEPLOY:
+	case PFS_DEFEND_LINE:
+		allowedByStrategy = earlyDeploySmoke || directPressure;
+		break;
+	case PFS_SIEGE_ROOM:
+		allowedByStrategy = roomBreachSmoke || directPressure;
+		break;
+	case PFS_SURVIVE:
+	case PFS_RETREAT_REGROUP:
+		allowedByStrategy = directPressure;
+		break;
+	case PFS_HOLD_REACTION:
+		allowedByStrategy = directPressure && !_visibleEnemies;
+		break;
+	case PFS_ASSAULT:
+		allowedByStrategy = highPressure && !_visibleEnemies;
+		break;
+	case PFS_HUNT_LAST_ENEMY:
+	default:
+		allowedByStrategy = false;
+		break;
+	}
+	if (!allowedByStrategy)
+	{
+		return false;
+	}
+	if (_visibleEnemies > PLAYER_AI_SMOKE_GOOD_SHOT_VISIBLE_LIMIT && !highPressure)
+	{
+		return false;
+	}
+
+	std::vector<Position> candidates;
+	auto addCandidate = [&](const Position &pos)
+	{
+		Tile *tile = _save->getTile(pos);
+		if (!tile || pos.z != current.z)
+		{
+			return;
+		}
+		if (tile->getSmoke() > PLAYER_AI_SMOKE_TARGET_SMOKE_LIMIT)
+		{
+			return;
+		}
+		if (isRecentPlayerSmokePlan(_save, _unit->getFaction(), contactPos, pos))
+		{
+			return;
+		}
+		for (const auto &existing : candidates)
+		{
+			if (existing == pos)
+			{
+				return;
+			}
+		}
+		candidates.push_back(pos);
+	};
+
+	const int pathX = (contactPos.x > current.x) - (contactPos.x < current.x);
+	const int pathY = (contactPos.y > current.y) - (contactPos.y < current.y);
+	if (pathX != 0 || pathY != 0)
+	{
+		for (int step = 2; step <= std::min(8, std::max(2, Position::distance2d(current, contactPos) - 2)); ++step)
+		{
+			addCandidate(current + Position(pathX * step, pathY * step, 0));
+		}
+		const Position sideA(-pathY, pathX, 0);
+		const Position sideB(pathY, -pathX, 0);
+		const Position center = current + Position(pathX * std::min(5, std::max(2, Position::distance2d(current, contactPos) / 2)), pathY * std::min(5, std::max(2, Position::distance2d(current, contactPos) / 2)), 0);
+		addCandidate(center + sideA);
+		addCandidate(center + sideB);
+	}
+	if (roomBreachSmoke && contactRoom)
+	{
+		for (const auto &entry : contactRoom->entryPositions)
+		{
+			if (entry.z == current.z)
+			{
+				addCandidate(entry);
+				const int entryPathX = (contactPos.x > entry.x) - (contactPos.x < entry.x);
+				const int entryPathY = (contactPos.y > entry.y) - (contactPos.y < entry.y);
+				addCandidate(entry + Position(entryPathX, entryPathY, 0));
+			}
+		}
+	}
+	addCandidate(contactPos);
+
+	int bestScore = PLAYER_AI_REJECT_SCORE;
+	Position bestTarget;
+	int bestThrowDistance = 0;
+	int bestAllyPenalty = 0;
+	int bestSmoke = 0;
+	Position originVoxel = _save->getTileEngine()->getOriginVoxel(smokeAction, 0);
+	for (const auto &target : candidates)
+	{
+		Tile *tile = _save->getTile(target);
+		if (!tile)
+		{
+			continue;
+		}
+		const int throwDist = Position::distance2d(current, target);
+		if (throwDist > PLAYER_AI_SMOKE_MAX_THROW_DISTANCE)
+		{
+			continue;
+		}
+		smokeAction.target = target;
+		Position targetVoxel = target.toVoxel() + Position(PLAYER_AI_THROW_TARGET_VOXEL_XY, PLAYER_AI_THROW_TARGET_VOXEL_XY, (PLAYER_AI_THROW_TARGET_VOXEL_Z_BASE + -tile->getTerrainLevel()));
+		if (!_save->getTileEngine()->validateThrow(smokeAction, originVoxel, targetVoxel, _save->getDepth()))
+		{
+			continue;
+		}
+		int allyPenalty = 0;
+		for (auto *ally : *_save->getUnits())
+		{
+			if (!ally || ally->isOut() || ally->getFaction() != _unit->getFaction() || ally->getPosition().z != target.z)
+			{
+				continue;
+			}
+			const int dist = Position::distance2d(ally->getPosition(), target);
+			if (dist <= PLAYER_AI_SMOKE_ALLY_BLIND_RADIUS)
+			{
+				allyPenalty += PLAYER_AI_SMOKE_ALLY_BLIND_PENALTY;
+			}
+		}
+		int score = 0;
+		score += currentSpotters * PLAYER_AI_SMOKE_SPOTTER_SCORE;
+		score += currentFireLines * PLAYER_AI_SMOKE_FIRELINE_SCORE;
+		score += currentExposure / PLAYER_AI_SMOKE_EXPOSURE_SCORE_DIVISOR;
+		score += std::max(0, smokeRadius - Position::distance2d(target, contactPos)) * PLAYER_AI_SMOKE_CONTACT_DISTANCE_SCORE;
+		score -= throwDist * PLAYER_AI_SMOKE_SELF_DISTANCE_PENALTY;
+		score -= allyPenalty;
+		score -= tile->getSmoke() * 10;
+		if (earlyDeploySmoke)
+		{
+			score += PLAYER_AI_SMOKE_INITIAL_BONUS;
+		}
+		if (roomBreachSmoke)
+		{
+			score += PLAYER_AI_SMOKE_SIEGE_BONUS;
+			if (contactRoom && std::find(contactRoom->entryPositions.begin(), contactRoom->entryPositions.end(), target) != contactRoom->entryPositions.end())
+			{
+				score += PLAYER_AI_SMOKE_ENTRY_BONUS;
+			}
+		}
+		if (strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP)
+		{
+			score += PLAYER_AI_SMOKE_SURVIVE_BONUS;
+		}
+		if (pathX != 0 || pathY != 0)
+		{
+			const int ux = target.x - current.x;
+			const int uy = target.y - current.y;
+			const int cx = contactPos.x - current.x;
+			const int cy = contactPos.y - current.y;
+			if ((ux * cx + uy * cy) > 0 && Position::distance2d(target, current) < Position::distance2d(contactPos, current))
+			{
+				score += PLAYER_AI_SMOKE_CENTER_PATH_BONUS;
+			}
+		}
+		if (score > bestScore)
+		{
+			bestScore = score;
+			bestTarget = target;
+			bestThrowDistance = throwDist;
+			bestAllyPenalty = allyPenalty;
+			bestSmoke = tile->getSmoke();
+		}
+	}
+
+	const int requiredScore = roomBreachSmoke ? PLAYER_AI_SMOKE_BREACH_MIN_SCORE : (earlyDeploySmoke ? PLAYER_AI_SMOKE_INITIAL_MIN_SCORE : PLAYER_AI_SMOKE_MIN_SCORE);
+	if (bestScore < requiredScore)
+	{
+		if (Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction smoke skipped: unit=" << _unit->getId()
+				<< ", reason=low_score"
+				<< ", strategy=" << getFactionStrategyName(strategy)
+				<< ", bestScore=" << bestScore
+				<< ", requiredScore=" << requiredScore
+				<< ", candidates=" << candidates.size()
+				<< ", contact=" << contactPos
+				<< ", roomBreach=" << roomBreachSmoke
+				<< ", earlyDeploy=" << earlyDeploySmoke;
+			_save->appendToAutoBattleLog(log.str());
+		}
+		return false;
+	}
+
+	_attackAction.actor = _unit;
+	_attackAction.weapon = smoke;
+	_attackAction.target = bestTarget;
+	_attackAction.type = BA_THROW;
+	_attackAction.finalFacing = _save->getTileEngine()->getDirectionTo(current, contactPos);
+	_AIMode = AI_COMBAT;
+	recordPlayerSmokePlan(_save, _unit->getFaction(), contactPos, bestTarget);
+	if (Options::autoBattleLog)
+	{
+		std::ostringstream log;
+		log << "Player faction smoke screen: unit=" << _unit->getId()
+			<< ", item=" << smoke->getRules()->getType()
+			<< ", target=" << bestTarget
+			<< ", contact=" << contactPos
+			<< ", score=" << bestScore
+			<< ", requiredScore=" << requiredScore
+			<< ", strategy=" << getFactionStrategyName(strategy)
+			<< ", radius=" << smokeRadius
+			<< ", throwDist=" << bestThrowDistance
+			<< ", spotters=" << currentSpotters
+			<< ", exposure=" << currentExposure
+			<< ", fireLines=" << currentFireLines
+			<< ", roomBreach=" << roomBreachSmoke
+			<< ", earlyDeploy=" << earlyDeploySmoke
+			<< ", targetSmoke=" << bestSmoke
+			<< ", allyPenalty=" << bestAllyPenalty;
 		_save->appendToAutoBattleLog(log.str());
 	}
 	return true;

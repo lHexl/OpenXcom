@@ -87,6 +87,7 @@ private:
 	void dont_think(BattleAction *action);
 	bool setupFactionStalkAmbush(const Position &contactPos, const BattleRoomInfo *contactRoom, int enemiesInRoom, BattleItem *weapon);
 	bool setupProximityMineAmbush();
+	bool setupSmokeScreen();
 	PlayerAIRole getPlayerAIRole(BattleItem *weapon) const;
 	const char *getPlayerAIRoleName(PlayerAIRole role) const;
 	PlayerAITacticalRole getPlayerTacticalRole(BattleItem *weapon, PlayerAIRole role) const;
