@@ -64,6 +64,17 @@ constexpr int PLAYER_AI_HALL_EXTRA_ENEMY_THREAT_BONUS = 20; // Бонус угр
 constexpr int PLAYER_AI_LATE_HUNT_TURN = 50; // Ход, после которого включается late hunt при малом числе hostile.
 constexpr int PLAYER_AI_HIDDEN_ASSIGN_ALL_TURN = 16; // Ход, после которого hidden target можно назначать всему отряду.
 constexpr int PLAYER_AI_DANGEROUS_VISIBLE_THREAT = 130; // Threat видимой цели, позволяющий поднять лимит назначенных стрелков.
+constexpr int PLAYER_AI_MANY_ENEMIES_MIN = 5; // Минимум hostile для режима many-enemies pressure.
+constexpr int PLAYER_AI_OUTNUMBERED_MARGIN = 2; // Насколько hostile должны превосходить союзников для outnumbered.
+constexpr int PLAYER_AI_BADLY_EXPOSED_MIN_ALLIES = 2; // Минимум засвеченных союзников для squadBadlyExposed.
+constexpr int PLAYER_AI_BADLY_EXPOSED_DIVISOR = 3; // Доля отряда, засветка которой считается badly exposed.
+constexpr int PLAYER_AI_LAST_ENEMY_LIMIT = 2; // Число hostile, при котором включается hunt-last-enemy.
+constexpr int PLAYER_AI_EARLY_PRESSURE_TURN_LIMIT = 2; // Последний ход early hidden pressure.
+constexpr int PLAYER_AI_EARLY_PRESSURE_MIN_ALLIES = 5; // Минимум активных союзников для early hidden pressure.
+constexpr int PLAYER_AI_SURVIVAL_ALLY_LIMIT = 3; // Размер отряда, при котором survive включается без доп. условий.
+constexpr int PLAYER_AI_SURVIVAL_WOUNDED_DIVISOR = 4; // Доля раненых, после которой outnumbered считается survival pressure.
+constexpr int PLAYER_AI_LATE_SURVIVAL_TURN = 2; // После этого хода включается late outnumbered pressure.
+constexpr int PLAYER_AI_LATE_SURVIVAL_HOSTILE_MARGIN = 5; // Перевес hostile для late outnumbered pressure.
 
 bool playerAIRoomActsOpen(const BattleRoomInfo &room)
 {
@@ -435,29 +446,29 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 
 	const int activeAllies = (int)_plan.allies.size();
 	const bool mostlyHidden = _plan.visibleContacts == 0 && _plan.hiddenContacts > 0;
-	const bool manyEnemies = _plan.activeHostiles >= std::max(5, activeAllies / 2);
-	const bool outnumbered = activeAllies > 0 && _plan.activeHostiles >= activeAllies + 2;
+	const bool manyEnemies = _plan.activeHostiles >= std::max(PLAYER_AI_MANY_ENEMIES_MIN, activeAllies / 2);
+	const bool outnumbered = activeAllies > 0 && _plan.activeHostiles >= activeAllies + PLAYER_AI_OUTNUMBERED_MARGIN;
 	const bool openContacts = _plan.openAreaContacts > 0 || (_plan.enemies.empty() && _plan.hiddenContacts > 0);
 	const bool roomProblem = _plan.roomContacts > 0 && _plan.openAreaContacts == 0;
 	const bool dangerousRoomProblem = _plan.roomContacts > 0 && _plan.roomContacts >= _plan.openAreaContacts;
-	const bool squadBadlyExposed = _plan.exposedAllies >= std::max(2, activeAllies / 3);
+	const bool squadBadlyExposed = _plan.exposedAllies >= std::max(PLAYER_AI_BADLY_EXPOSED_MIN_ALLIES, activeAllies / PLAYER_AI_BADLY_EXPOSED_DIVISOR);
 	const bool squadWoundedUnderContact = _plan.woundedAllies > 0 && _plan.exposedAllies > 0;
-	const bool lastEnemies = _plan.activeHostiles <= 2;
+	const bool lastEnemies = _plan.activeHostiles <= PLAYER_AI_LAST_ENEMY_LIMIT;
 	const bool lateHunt = _save->getTurn() >= PLAYER_AI_LATE_HUNT_TURN && activeAllies > 0 && _plan.activeHostiles <= std::max(PLAYER_AI_HIDDEN_CONTACT_LIMIT, activeAllies + 1);
-	const bool earlyHiddenPressure = _save->getTurn() <= 2 && mostlyHidden && activeAllies >= 5 && _plan.activeHostiles > 2;
-	const bool realSurvivalPressure = activeAllies <= 3
-		|| (outnumbered && (_plan.visibleContacts > 0 || _plan.exposedAllies > 0 || _plan.woundedAllies >= std::max(2, activeAllies / 4)))
-		|| (_save->getTurn() > 2 && outnumbered && _plan.activeHostiles >= activeAllies + 5);
+	const bool earlyHiddenPressure = _save->getTurn() <= PLAYER_AI_EARLY_PRESSURE_TURN_LIMIT && mostlyHidden && activeAllies >= PLAYER_AI_EARLY_PRESSURE_MIN_ALLIES && _plan.activeHostiles > PLAYER_AI_LAST_ENEMY_LIMIT;
+	const bool realSurvivalPressure = activeAllies <= PLAYER_AI_SURVIVAL_ALLY_LIMIT
+		|| (outnumbered && (_plan.visibleContacts > 0 || _plan.exposedAllies > 0 || _plan.woundedAllies >= std::max(PLAYER_AI_BADLY_EXPOSED_MIN_ALLIES, activeAllies / PLAYER_AI_SURVIVAL_WOUNDED_DIVISOR)))
+		|| (_save->getTurn() > PLAYER_AI_LATE_SURVIVAL_TURN && outnumbered && _plan.activeHostiles >= activeAllies + PLAYER_AI_LATE_SURVIVAL_HOSTILE_MARGIN);
 	const bool enableInitialDeployMode = true;
 	if (enableInitialDeployMode
-		&& _save->getTurn() <= 2
-		&& activeAllies >= 5
-		&& _plan.activeHostiles > 2
+		&& _save->getTurn() <= PLAYER_AI_EARLY_PRESSURE_TURN_LIMIT
+		&& activeAllies >= PLAYER_AI_EARLY_PRESSURE_MIN_ALLIES
+		&& _plan.activeHostiles > PLAYER_AI_LAST_ENEMY_LIMIT
 		&& _plan.activeHostiles <= activeAllies
 		&& _plan.hiddenContacts > 0
 		&& _plan.visibleContacts == 0
 		&& _plan.roomContacts == 0
-		&& _plan.exposedAllies <= std::max(2, activeAllies / 3))
+		&& _plan.exposedAllies <= std::max(PLAYER_AI_BADLY_EXPOSED_MIN_ALLIES, activeAllies / PLAYER_AI_BADLY_EXPOSED_DIVISOR))
 	{
 		_plan.strategy = PFS_INITIAL_DEPLOY;
 	}
