@@ -24,6 +24,7 @@
 #include "../Savegame/SavedBattleGame.h"
 #include "../Savegame/Tile.h"
 #include <algorithm>
+#include <climits>
 #include <sstream>
 
 namespace OpenXcom
@@ -32,13 +33,45 @@ namespace OpenXcom
 namespace
 {
 
+constexpr int PLAYER_AI_OPEN_ROOM_TILE_LIMIT = 90; // Размер комнаты, после которого planner трактует ее как открытую зону.
+constexpr int PLAYER_AI_BASE_ENEMY_THREAT = 40; // Базовая угроза любого активного hostile.
+constexpr int PLAYER_AI_ARMED_THREAT_BONUS = 35; // Бонус угрозы за оружие в основной руке.
+constexpr int PLAYER_AI_MELEE_THREAT_BONUS = 20; // Бонус угрозы за melee-оружие.
+constexpr int PLAYER_AI_REJECT_SCORE = -100000; // Sentinel-score для невозможного назначения.
+constexpr int PLAYER_AI_MIN_PRESSURE_ACCURACY = 30; // Минимальная точность, используемая при оценке pressure оружия.
+constexpr int PLAYER_AI_PRESSURE_PERCENT = 100; // База процентной формулы expected pressure.
+constexpr int PLAYER_AI_MELEE_CLOSE_RANGE = 3; // Дистанция, на которой melee-актеру выгодна цель.
+constexpr int PLAYER_AI_MELEE_CLOSE_ASSIGNMENT_BONUS = 45; // Бонус melee-назначения по близкой цели.
+constexpr int PLAYER_AI_MELEE_FAR_ASSIGNMENT_PENALTY = 60; // Штраф melee-назначения по дальней цели.
+constexpr int PLAYER_AI_CAN_SHOOT_ASSIGNMENT_BONUS = 150; // Бонус назначения цели, по которой юнит уже может стрелять.
+constexpr int PLAYER_AI_CAN_SEE_ASSIGNMENT_BONUS = 30; // Бонус назначения цели, которую юнит видит.
+constexpr int PLAYER_AI_UNSEEN_VISIBLE_CONTACT_PENALTY = 80; // Штраф назначения видимого фракции контакта юниту без своей видимости.
+constexpr int PLAYER_AI_WOUNDED_HEALTH_LIMIT = 35; // Health, ниже которого цель считается раненой для фокуса.
+constexpr int PLAYER_AI_WOUNDED_ASSIGNMENT_BONUS = 65; // Бонус добивания раненой цели.
+constexpr int PLAYER_AI_WOUNDED_OVERFOCUS_PENALTY = 25; // Штраф за каждого уже назначенного на раненую цель.
+constexpr int PLAYER_AI_NORMAL_OVERFOCUS_PENALTY = 35; // Штраф за каждого уже назначенного на обычную цель.
+constexpr int PLAYER_AI_VISIBLE_BY_FOCUS_BONUS = 20; // Focus score за каждого союзника, который видит цель.
+constexpr int PLAYER_AI_CAN_SHOOT_BY_FOCUS_BONUS = 35; // Focus score за каждого союзника, который может стрелять по цели.
+constexpr int PLAYER_AI_HIDDEN_CONTACT_LIMIT = 3; // Максимум hidden contacts, которые planner сохраняет без видимых врагов.
+constexpr int PLAYER_AI_HIDDEN_FOCUS_BASE_PENALTY = 90; // Базовый штраф focus score для hidden contact.
+constexpr int PLAYER_AI_HIDDEN_DISTANCE_PENALTY = 2; // Штраф hidden contact за дистанцию до ближайшего союзника.
+constexpr int PLAYER_AI_HIDDEN_THREAT_SCALE_NUM = 2; // Числитель снижения threat hidden contact.
+constexpr int PLAYER_AI_HIDDEN_THREAT_SCALE_DEN = 3; // Знаменатель снижения threat hidden contact.
+constexpr int PLAYER_AI_ROOM_CONTACT_THREAT_BONUS = 20; // Базовый бонус угрозы за контакт в закрытой комнате.
+constexpr int PLAYER_AI_ROOM_EXTRA_ENEMY_THREAT_BONUS = 45; // Бонус угрозы за каждого дополнительного врага в комнате.
+constexpr int PLAYER_AI_ROOM_CONTROLLED_OPENING_LIMIT = 2; // Двери/окна, ниже которых комната считается контролируемой/узкой.
+constexpr int PLAYER_AI_HALL_EXTRA_ENEMY_THREAT_BONUS = 20; // Бонус угрозы за дополнительных врагов в hall/open zone.
+constexpr int PLAYER_AI_LATE_HUNT_TURN = 50; // Ход, после которого включается late hunt при малом числе hostile.
+constexpr int PLAYER_AI_HIDDEN_ASSIGN_ALL_TURN = 16; // Ход, после которого hidden target можно назначать всему отряду.
+constexpr int PLAYER_AI_DANGEROUS_VISIBLE_THREAT = 130; // Threat видимой цели, позволяющий поднять лимит назначенных стрелков.
+
 bool playerAIRoomActsOpen(const BattleRoomInfo &room)
 {
 	const bool hasControlledEntry = !room.entryPositions.empty() || room.doorCount + room.windowCount > 0;
 	return room.isOutside
 		|| room.isHall
-		|| room.tileCount > 90
-		|| (!hasControlledEntry && room.openingCount > room.tileCount * 2)
+		|| room.tileCount > PLAYER_AI_OPEN_ROOM_TILE_LIMIT
+		|| (!hasControlledEntry && room.openingCount > room.tileCount * PLAYER_AI_ROOM_CONTROLLED_OPENING_LIMIT)
 		|| (room.entryPositions.empty() && room.doorCount + room.windowCount == 0);
 }
 
@@ -123,7 +156,7 @@ bool PlayerFactionPlanner::getBestEnemyContactPosition(Position *position, const
 		return false;
 	}
 	const PlayerFactionEnemyContact *bestContact = 0;
-	int bestScore = -100000;
+	int bestScore = PLAYER_AI_REJECT_SCORE;
 	for (const auto &contact : _plan.enemies)
 	{
 		const int score = contact.threatScore + contact.focusScore;
@@ -184,16 +217,16 @@ int PlayerFactionPlanner::scoreEnemyThreat(BattleUnit *enemy) const
 	{
 		return 0;
 	}
-	int score = 40;
+	int score = PLAYER_AI_BASE_ENEMY_THREAT;
 	score += std::max(0, enemy->getHealth());
 	score += std::max(0, enemy->getTimeUnits()) / 2;
 	if (enemy->getMainHandWeapon(false))
 	{
-		score += 35;
+		score += PLAYER_AI_ARMED_THREAT_BONUS;
 	}
 	if (enemy->getUtilityWeapon(BT_MELEE))
 	{
-		score += 20;
+		score += PLAYER_AI_MELEE_THREAT_BONUS;
 	}
 	return score;
 }
@@ -202,7 +235,7 @@ int PlayerFactionPlanner::scoreAssignment(BattleUnit *actor, const PlayerFaction
 {
 	if (!actor || !contact.enemy)
 	{
-		return -100000;
+		return PLAYER_AI_REJECT_SCORE;
 	}
 	const int distance = Position::distance2d(actor->getPosition(), contact.enemy->getPosition());
 	int score = contact.threatScore + contact.focusScore;
@@ -213,28 +246,28 @@ int PlayerFactionPlanner::scoreAssignment(BattleUnit *actor, const PlayerFaction
 		const RuleItem *rule = weapon->getRules();
 		const UnitStats *stats = actor->getBaseStats();
 		const int bestAccuracy = std::max(std::max(rule->getAccuracySnap(), rule->getAccuracyAimed()), rule->getAccuracyAuto());
-		const int expectedPressure = std::max(0, rule->getPower()) + bestAccuracy * std::max(30, (int)stats->firing) / 100;
+		const int expectedPressure = std::max(0, rule->getPower()) + bestAccuracy * std::max(PLAYER_AI_MIN_PRESSURE_ACCURACY, (int)stats->firing) / PLAYER_AI_PRESSURE_PERCENT;
 		score += expectedPressure / 2;
 		if (rule->getBattleType() == BT_MELEE)
 		{
-			score += distance <= 3 ? 45 : -60;
+			score += distance <= PLAYER_AI_MELEE_CLOSE_RANGE ? PLAYER_AI_MELEE_CLOSE_ASSIGNMENT_BONUS : -PLAYER_AI_MELEE_FAR_ASSIGNMENT_PENALTY;
 		}
 	}
 	if (std::find(contact.canShootBy.begin(), contact.canShootBy.end(), actor) != contact.canShootBy.end())
 	{
-		score += 150;
+		score += PLAYER_AI_CAN_SHOOT_ASSIGNMENT_BONUS;
 	}
 	else if (std::find(contact.visibleBy.begin(), contact.visibleBy.end(), actor) != contact.visibleBy.end())
 	{
-		score += 30;
+		score += PLAYER_AI_CAN_SEE_ASSIGNMENT_BONUS;
 	}
 	else
 	{
-		score -= 80;
+		score -= PLAYER_AI_UNSEEN_VISIBLE_CONTACT_PENALTY;
 	}
-	const bool wounded = contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= 35;
-	score += wounded ? 65 : 0;
-	score -= assignedCount * (wounded ? 25 : 35);
+	const bool wounded = contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= PLAYER_AI_WOUNDED_HEALTH_LIMIT;
+	score += wounded ? PLAYER_AI_WOUNDED_ASSIGNMENT_BONUS : 0;
+	score -= assignedCount * (wounded ? PLAYER_AI_WOUNDED_OVERFOCUS_PENALTY : PLAYER_AI_NORMAL_OVERFOCUS_PENALTY);
 	return score;
 }
 
@@ -327,19 +360,19 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 		if (contact.visibleContact)
 		{
 			++_plan.visibleContacts;
-			contact.focusScore = 20 * (int)contact.visibleBy.size() + 35 * (int)contact.canShootBy.size();
+			contact.focusScore = PLAYER_AI_VISIBLE_BY_FOCUS_BONUS * (int)contact.visibleBy.size() + PLAYER_AI_CAN_SHOOT_BY_FOCUS_BONUS * (int)contact.canShootBy.size();
 			_plan.enemies.push_back(contact);
 		}
 		else
 		{
 			++_plan.hiddenContacts;
-			int nearestAllyDist = 100000;
+			int nearestAllyDist = INT_MAX;
 			for (auto *ally : _plan.allies)
 			{
 				nearestAllyDist = std::min(nearestAllyDist, Position::distance2d(ally->getPosition(), enemy->getPosition()));
 			}
-			contact.focusScore = -90 - nearestAllyDist * 2;
-			contact.threatScore = contact.threatScore * 2 / 3;
+			contact.focusScore = -PLAYER_AI_HIDDEN_FOCUS_BASE_PENALTY - nearestAllyDist * PLAYER_AI_HIDDEN_DISTANCE_PENALTY;
+			contact.threatScore = contact.threatScore * PLAYER_AI_HIDDEN_THREAT_SCALE_NUM / PLAYER_AI_HIDDEN_THREAT_SCALE_DEN;
 			hiddenContacts.push_back(contact);
 		}
 	}
@@ -349,7 +382,7 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 		{
 			return a.threatScore + a.focusScore > b.threatScore + b.focusScore;
 		});
-		const int hiddenLimit = std::min(3, (int)hiddenContacts.size());
+		const int hiddenLimit = std::min(PLAYER_AI_HIDDEN_CONTACT_LIMIT, (int)hiddenContacts.size());
 		for (int i = 0; i < hiddenLimit; ++i)
 		{
 			_plan.enemies.push_back(hiddenContacts[i]);
@@ -367,16 +400,16 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 		if (!contact.roomOutside && !contact.roomHall)
 		{
 			++_plan.roomContacts;
-			contact.threatScore += 20 + std::max(0, contact.enemiesInRoom - 1) * 45;
-			if (contact.roomDoors + contact.roomWindows <= 2)
+			contact.threatScore += PLAYER_AI_ROOM_CONTACT_THREAT_BONUS + std::max(0, contact.enemiesInRoom - 1) * PLAYER_AI_ROOM_EXTRA_ENEMY_THREAT_BONUS;
+			if (contact.roomDoors + contact.roomWindows <= PLAYER_AI_ROOM_CONTROLLED_OPENING_LIMIT)
 			{
-				contact.threatScore += 20;
+				contact.threatScore += PLAYER_AI_ROOM_CONTACT_THREAT_BONUS;
 			}
 		}
 		else if (contact.roomHall)
 		{
 			++_plan.openAreaContacts;
-			contact.threatScore += std::max(0, contact.enemiesInRoom - 1) * 20;
+			contact.threatScore += std::max(0, contact.enemiesInRoom - 1) * PLAYER_AI_HALL_EXTRA_ENEMY_THREAT_BONUS;
 		}
 		else
 		{
@@ -410,7 +443,7 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	const bool squadBadlyExposed = _plan.exposedAllies >= std::max(2, activeAllies / 3);
 	const bool squadWoundedUnderContact = _plan.woundedAllies > 0 && _plan.exposedAllies > 0;
 	const bool lastEnemies = _plan.activeHostiles <= 2;
-	const bool lateHunt = _save->getTurn() >= 50 && activeAllies > 0 && _plan.activeHostiles <= std::max(3, activeAllies + 1);
+	const bool lateHunt = _save->getTurn() >= PLAYER_AI_LATE_HUNT_TURN && activeAllies > 0 && _plan.activeHostiles <= std::max(PLAYER_AI_HIDDEN_CONTACT_LIMIT, activeAllies + 1);
 	const bool earlyHiddenPressure = _save->getTurn() <= 2 && mostlyHidden && activeAllies >= 5 && _plan.activeHostiles > 2;
 	const bool realSurvivalPressure = activeAllies <= 3
 		|| (outnumbered && (_plan.visibleContacts > 0 || _plan.exposedAllies > 0 || _plan.woundedAllies >= std::max(2, activeAllies / 4)))
@@ -473,7 +506,7 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	for (auto* ally : _plan.allies)
 	{
 		PlayerFactionEnemyContact *bestContact = 0;
-		int bestScore = -100000;
+		int bestScore = PLAYER_AI_REJECT_SCORE;
 		for (auto &contact : _plan.enemies)
 		{
 			const bool canShoot = std::find(contact.canShootBy.begin(), contact.canShootBy.end(), ally) != contact.canShootBy.end();
@@ -488,7 +521,7 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 			const int assignedCount = assignedCountByEnemyId[contact.enemy->getId()];
 			int maxAssignees = contact.visibleContact
 				? std::max(3, (int)contact.canShootBy.size() + std::max(0, (int)contact.visibleBy.size() - (int)contact.canShootBy.size()) / 2)
-				: ((_plan.enemies.size() == 1 || _save->getTurn() >= 16)
+				: ((_plan.enemies.size() == 1 || _save->getTurn() >= PLAYER_AI_HIDDEN_ASSIGN_ALL_TURN)
 					? (int)_plan.allies.size()
 					: std::min((int)_plan.allies.size(), (contact.canShootBy.empty() && contact.visibleBy.empty()) ? 3 : 5));
 			if (!contact.visibleContact && (_plan.strategy == PFS_DEFEND_LINE || _plan.strategy == PFS_HOLD_REACTION || _plan.strategy == PFS_SURVIVE))
@@ -499,11 +532,11 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 			{
 				maxAssignees = std::min(maxAssignees, 5);
 			}
-			if (contact.visibleContact && (contact.threatScore >= 130 || contact.canShootBy.size() >= 2))
+			if (contact.visibleContact && (contact.threatScore >= PLAYER_AI_DANGEROUS_VISIBLE_THREAT || contact.canShootBy.size() >= PLAYER_AI_ROOM_CONTROLLED_OPENING_LIMIT))
 			{
 				maxAssignees = std::max(maxAssignees, 5);
 			}
-			if (contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= 35)
+			if (contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= PLAYER_AI_WOUNDED_HEALTH_LIMIT)
 			{
 				maxAssignees = std::max(maxAssignees, 6);
 			}

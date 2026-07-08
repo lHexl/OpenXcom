@@ -42,6 +42,14 @@ namespace OpenXcom
 namespace
 {
 
+constexpr unsigned long long FACTION_AI_ROOM_SIGNATURE_SEED = 1469598103934665603ull; // FNV-like seed for room-cache invalidation.
+constexpr unsigned long long FACTION_AI_ROOM_SIGNATURE_PRIME = 1099511628211ull; // FNV-like multiplier for room-cache invalidation.
+constexpr unsigned long long FACTION_AI_TILE_PART_SIGNATURE_SALT = 104729ull; // Salt separating tile parts in the room-cache signature.
+constexpr int FACTION_AI_OUTSIDE_ROOM_MIN_TILES = 48; // Edge-touching zone size needed to classify it as outside.
+constexpr int FACTION_AI_HALL_ROOM_MIN_TILES = 120; // Large interior zone size needed to classify it as hall/open.
+constexpr int FACTION_AI_WIDE_HALL_ROOM_MIN_TILES = 80; // Smaller hall threshold when many openings/windows exist.
+constexpr int FACTION_AI_WIDE_HALL_OPENING_FACTOR = 2; // Openings/windows per tile multiplier for wide hall detection.
+
 std::string factionAIJsonEscape(const std::string &value)
 {
 	std::ostringstream escaped;
@@ -202,16 +210,16 @@ int FactionAI::getEnemyContactCount() const
 
 unsigned long long FactionAI::calculateRoomCacheSignature() const
 {
-	unsigned long long signature = 1469598103934665603ull;
+	unsigned long long signature = FACTION_AI_ROOM_SIGNATURE_SEED;
 	signature ^= (unsigned long long)_save->getMapSizeXYZ();
-	signature *= 1099511628211ull;
+	signature *= FACTION_AI_ROOM_SIGNATURE_PRIME;
 	for (int i = 0; i < _save->getMapSizeXYZ(); ++i)
 	{
 		const Tile *tile = _save->getTile(i);
 		for (int part = O_FLOOR; part < O_MAX; ++part)
 		{
-			signature ^= (unsigned long long)(reinterpret_cast<std::uintptr_t>(tile->getMapData((TilePart)part)) + part * 104729);
-			signature *= 1099511628211ull;
+			signature ^= (unsigned long long)(reinterpret_cast<std::uintptr_t>(tile->getMapData((TilePart)part)) + part * FACTION_AI_TILE_PART_SIGNATURE_SALT);
+			signature *= FACTION_AI_ROOM_SIGNATURE_PRIME;
 		}
 	}
 	return signature;
@@ -412,8 +420,8 @@ void FactionAI::rebuildRoomCache(unsigned long long signature) const
 				}
 			}
 		}
-		info.isOutside = info.touchesMapEdge && info.tileCount >= 48;
-		info.isHall = !info.isOutside && (info.tileCount >= 120 || (info.tileCount >= 80 && info.openingCount + info.windowCount >= info.tileCount * 2));
+		info.isOutside = info.touchesMapEdge && info.tileCount >= FACTION_AI_OUTSIDE_ROOM_MIN_TILES;
+		info.isHall = !info.isOutside && (info.tileCount >= FACTION_AI_HALL_ROOM_MIN_TILES || (info.tileCount >= FACTION_AI_WIDE_HALL_ROOM_MIN_TILES && info.openingCount + info.windowCount >= info.tileCount * FACTION_AI_WIDE_HALL_OPENING_FACTOR));
 		_roomInfos.push_back(info);
 	}
 
