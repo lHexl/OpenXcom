@@ -171,6 +171,7 @@ public:
 	bool findFirePoint();
 	bool setupCleanShotMove(BattleUnit *target);
 	bool setupFallbackCoverMove(int minScore = 45, int minExposureGain = 0, int minSpotterGain = 0, int minCoverGain = 0);
+	bool setupSmokeExitMove();
 	/// Decides if we should throw a grenade/launch a missile to this position.
 	int scorePlayerGrenadeTarget(BattleItem *grenade, const Position &targetPos, int radius, bool proximity, std::string *rejectReason = 0) const;
 	int explosiveEfficacy(Position targetPos, BattleUnit *attackingUnit, int radius, int diff, bool grenade = false) const;

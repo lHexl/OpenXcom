@@ -65,7 +65,9 @@ Game::Game(const std::string &title) : _screen(0), _cursor(0), _lang(0), _save(0
 	if (Options::autoBattleHeadless)
 	{
 		static char dummyVideoDriver[] = "SDL_VIDEODRIVER=dummy";
+		static char dummyAudioDriver[] = "SDL_AUDIODRIVER=dummy";
 		SDL_putenv(dummyVideoDriver);
+		SDL_putenv(dummyAudioDriver);
 		Options::captureMouse = SDL_GRAB_OFF;
 	}
 
@@ -691,6 +693,13 @@ void Game::loadLanguages()
  */
 void Game::initAudio()
 {
+	if (Options::autoBattleHeadless)
+	{
+		Options::mute = true;
+		Log(LOG_INFO) << "Audio disabled for headless auto battle.";
+		return;
+	}
+
 	if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0)
 	{
 		Log(LOG_ERROR) << SDL_GetError();
