@@ -54,6 +54,8 @@ struct PendingPlayerGrenadeDanger
 	UnitFaction faction;
 	Position target;
 	int radius;
+	int power;
+	bool reservesTargets;
 };
 
 std::vector<PendingPlayerGrenadeDanger> pendingPlayerGrenadeDangers;
@@ -1074,6 +1076,34 @@ bool isPendingPlayerGrenadeDanger(SavedBattleGame *save, UnitFaction faction, co
 	return false;
 }
 
+bool isPendingPlayerTimedBlastTarget(SavedBattleGame *save, UnitFaction faction, const BattleUnit *unit)
+{
+	if (!save || !unit || unit->isOut() || unit->getFaction() == faction)
+	{
+		return false;
+	}
+	cleanupPendingPlayerGrenadeDangers(save);
+	for (const auto &danger : pendingPlayerGrenadeDangers)
+	{
+		if (danger.faction != faction || !danger.reservesTargets || danger.power <= 0
+			|| abs(danger.target.z - unit->getPosition().z) > Options::battleExplosionHeight)
+		{
+			continue;
+		}
+		const int distance = Position::distance2d(danger.target, unit->getPosition());
+		if (distance > std::max(1, danger.radius - 1))
+		{
+			continue;
+		}
+		const int armor = std::max(std::max(unit->getArmor(SIDE_FRONT), unit->getArmor(SIDE_LEFT)), unit->getArmor(SIDE_RIGHT));
+		if (danger.power >= unit->getHealth() + armor / 2)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool isActivePlayerProximityMineDanger(SavedBattleGame *save, const Position &pos, int margin = 0)
 {
 	if (!save)
@@ -1115,21 +1145,23 @@ bool isPlayerExplosiveDanger(SavedBattleGame *save, UnitFaction faction, const P
 	return isPendingPlayerGrenadeDanger(save, faction, pos) || isActivePlayerProximityMineDanger(save, pos, margin);
 }
 
-void recordPendingPlayerGrenadeDanger(SavedBattleGame *save, UnitFaction faction, const Position &target, int radius)
+void recordPendingPlayerGrenadeDanger(SavedBattleGame *save, UnitFaction faction, const Position &target, int radius, int power, bool reservesTargets)
 {
 	if (!save || radius <= 0)
 	{
 		return;
 	}
 	cleanupPendingPlayerGrenadeDangers(save);
-	for (const auto &danger : pendingPlayerGrenadeDangers)
+	for (auto &danger : pendingPlayerGrenadeDangers)
 	{
 		if (danger.faction == faction && danger.target == target && danger.radius == radius)
 		{
+			danger.power = std::max(danger.power, power);
+			danger.reservesTargets = danger.reservesTargets || reservesTargets;
 			return;
 		}
 	}
-	PendingPlayerGrenadeDanger danger = { save, save->getTurn(), faction, target, radius };
+	PendingPlayerGrenadeDanger danger = { save, save->getTurn(), faction, target, radius, power, reservesTargets };
 	pendingPlayerGrenadeDangers.push_back(danger);
 }
 
@@ -5169,7 +5201,9 @@ void PlayerFactionAI::setupAttack()
 		&& _knownEnemies > 0)
 	{
 		BattleUnit *assignedTarget = _factionAI->getAssignedTarget(_unit);
-		if (assignedTarget && !assignedTarget->isOut() && assignedTarget->getTile() && validTarget(assignedTarget, true, true))
+		if (assignedTarget && !assignedTarget->isOut() && assignedTarget->getTile()
+			&& !isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), assignedTarget)
+			&& validTarget(assignedTarget, true, true))
 		{
 			BattleUnit *savedAggro = _aggroTarget;
 			BattleAction savedAction = _attackAction;
@@ -5264,7 +5298,9 @@ void PlayerFactionAI::setupAttack()
 				}
 			}
 		}
-		const bool teamGrenadeWorthy = assignedTarget && bestExplosivePower > 0
+		const bool teamGrenadeWorthy = assignedTarget
+			&& !isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), assignedTarget)
+			&& bestExplosivePower > 0
 			&& (nearbyTargets >= 2
 				|| assignedTarget->getHealth() >= std::max(65, bestExplosivePower / 2)
 				|| targetArmor >= std::max(25, bestExplosivePower / 2)
@@ -5327,6 +5363,7 @@ void PlayerFactionAI::setupAttack()
 		{
 			BattleUnit *assignedTarget = _factionAI->getAssignedTarget(_unit);
 			if (assignedTarget && !assignedTarget->isOut() && validTarget(assignedTarget, true, true)
+				&& !isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), assignedTarget)
 				&& assignedTarget->getTile() && _save->getTileEngine()->visible(_unit, assignedTarget->getTile()))
 			{
 				_aggroTarget = assignedTarget;
@@ -5372,7 +5409,9 @@ void PlayerFactionAI::setupAttack()
 		BattleUnit *assignedTarget = _factionAI->getAssignedTarget(_unit);
 		const PlayerFactionStrategy strategy = getFactionStrategy();
 		const bool defensiveHiddenContact = strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP;
-		if (assignedTarget && !assignedTarget->isOut() && _rifle && (!defensiveHiddenContact || _visibleEnemies > 0 || _spottingEnemies > 0))
+		if (assignedTarget && !assignedTarget->isOut()
+			&& !isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), assignedTarget)
+			&& _rifle && (!defensiveHiddenContact || _visibleEnemies > 0 || _spottingEnemies > 0))
 		{
 			_aggroTarget = assignedTarget;
 			if (!_attackAction.weapon)
@@ -6365,6 +6404,18 @@ int PlayerFactionAI::selectNearestTarget()
 		const bool sharedPlayerContact = _unit->getFaction() == FACTION_PLAYER && _factionAI;
 		if (validTarget(bu, true, true) && (visible || assigned || sharedPlayerContact))
 		{
+			if (_unit->getFaction() == FACTION_PLAYER && isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), bu))
+			{
+				if (Options::autoBattleLog)
+				{
+					std::ostringstream log;
+					log << "Player faction target reserved for timed blast: unit=" << _unit->getId()
+						<< ", target=" << bu->getId()
+						<< ", position=" << bu->getPosition();
+					_save->appendToAutoBattleLog(log.str());
+				}
+				continue;
+			}
 			if (visible)
 			{
 				tally++;
@@ -6640,7 +6691,9 @@ bool PlayerFactionAI::selectSpottedUnitForSniper()
 
 	for (auto* bu : *_save->getUnits())
 	{
-		if (validTarget(bu, true, true) && bu->getTurnsLeftSpottedForSnipersByFaction(_unit->getFaction()))
+		if (validTarget(bu, true, true)
+			&& !(_unit->getFaction() == FACTION_PLAYER && isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), bu))
+			&& bu->getTurnsLeftSpottedForSnipersByFaction(_unit->getFaction()))
 		{
 			// Determine which firing mode to use based on how many hits we expect per turn and the unit's intelligence/aggression
 			_aggroTarget = bu;
@@ -7324,7 +7377,9 @@ bool PlayerFactionAI::findFirePoint()
 
 bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 {
-	if (_unit->getFaction() != FACTION_PLAYER || !target || target->isOut() || !_attackAction.weapon || (_reachableWithAttack.empty() && _reachable.empty()))
+	if (_unit->getFaction() != FACTION_PLAYER || !target || target->isOut()
+		|| isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), target)
+		|| !_attackAction.weapon || (_reachableWithAttack.empty() && _reachable.empty()))
 	{
 		if (_unit->getFaction() == FACTION_PLAYER && Options::autoBattleLog)
 		{
@@ -7744,6 +7799,7 @@ bool PlayerFactionAI::setupSharedCleanShotMove(BattleUnit *excludedTarget)
 	for (auto *enemy : *_save->getUnits())
 	{
 		if (!enemy || enemy == excludedTarget || enemy->isOut() || enemy->getFaction() != FACTION_HOSTILE
+			|| isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), enemy)
 			|| !enemy->getTile() || !validTarget(enemy, true, true))
 		{
 			continue;
@@ -9648,6 +9704,11 @@ int PlayerFactionAI::scorePlayerGrenadeTarget(BattleItem *grenade, const Positio
 	{
 		return reject(!grenade ? "missing_grenade" : (radius <= 0 ? "no_radius" : "missing_target_tile"));
 	}
+	Tile *targetTile = _save->getTile(targetPos);
+	if (!proximity && targetPos.z > 0 && targetTile->hasNoFloor(_save))
+	{
+		return reject("grenade_would_fall_to_lower_level");
+	}
 	BattleAction action;
 	action.actor = _unit;
 	action.weapon = grenade;
@@ -10000,7 +10061,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 			_attackAction.weapon = carriedMine;
 			_attackAction.target = stagedTarget;
 			_attackAction.type = BA_THROW;
-			recordPendingPlayerGrenadeDanger(_save, _unit->getFaction(), stagedTarget, stagedRadius);
+			recordPendingPlayerGrenadeDanger(_save, _unit->getFaction(), stagedTarget, stagedRadius, 0, false);
 			recordPlayerProximityMinePlan(_save, _unit->getFaction(), stagedContact, stagedTarget);
 			clearPlayerProximityMineStaging(_save, _unit->getId());
 			_rifle = false;
@@ -10706,7 +10767,7 @@ bool PlayerFactionAI::setupProximityMineAmbush()
 	_attackAction.weapon = bestAction.weapon;
 	_attackAction.target = bestAction.target;
 	_attackAction.type = BA_THROW;
-	recordPendingPlayerGrenadeDanger(_save, _unit->getFaction(), bestAction.target, bestRadius);
+	recordPendingPlayerGrenadeDanger(_save, _unit->getFaction(), bestAction.target, bestRadius, 0, false);
 	recordPlayerProximityMinePlan(_save, _unit->getFaction(), contactPos, bestAction.target);
 	_rifle = false;
 	_melee = false;
@@ -11053,7 +11114,8 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 		_attackAction.target = bestAction.target;
 		_attackAction.type = BA_THROW;
 		const int dangerRadius = bestAction.weapon->getRules()->getExplosionRadius(BattleActionAttack::GetBeforeShoot(bestAction));
-		recordPendingPlayerGrenadeDanger(_save, _unit->getFaction(), bestAction.target, dangerRadius);
+		const int dangerPower = std::max(0, bestAction.weapon->getRules()->getPower());
+		recordPendingPlayerGrenadeDanger(_save, _unit->getFaction(), bestAction.target, dangerRadius, dangerPower, true);
 		if (bestAction.weapon->getRules()->getBattleType() == BT_PROXIMITYGRENADE && _factionAI)
 		{
 			Position contactPos;
