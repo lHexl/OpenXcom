@@ -52,7 +52,7 @@ constexpr int PLAYER_AI_WOUNDED_OVERFOCUS_PENALTY = 25; // Штраф за ка�
 constexpr int PLAYER_AI_NORMAL_OVERFOCUS_PENALTY = 35; // Штраф за каждого уже назначенного на обычную цель.
 constexpr int PLAYER_AI_VISIBLE_BY_FOCUS_BONUS = 20; // Focus score за каждого союзника, который видит цель.
 constexpr int PLAYER_AI_CAN_SHOOT_BY_FOCUS_BONUS = 35; // Focus score за каждого союзника, который может стрелять по цели.
-constexpr int PLAYER_AI_HIDDEN_CONTACT_LIMIT = 3; // Максимум hidden contacts, которые planner сохраняет без видимых врагов.
+constexpr int PLAYER_AI_HIDDEN_CONTACT_LIMIT = 32; // Сохраняем полную картину hidden contacts, чтобы распределять поиск и взрывчатку по всему отряду.
 constexpr int PLAYER_AI_HIDDEN_FOCUS_BASE_PENALTY = 90; // Базовый штраф focus score для hidden contact.
 constexpr int PLAYER_AI_HIDDEN_DISTANCE_PENALTY = 2; // Штраф hidden contact за дистанцию до ближайшего союзника.
 constexpr int PLAYER_AI_HIDDEN_THREAT_SCALE_NUM = 2; // Числитель снижения threat hidden contact.
@@ -65,7 +65,7 @@ constexpr int PLAYER_AI_LATE_HUNT_TURN = 50; // Ход, после которо�
 constexpr int PLAYER_AI_HIDDEN_ASSIGN_ALL_TURN = 16; // Ход, после которого hidden target можно назначать всему отряду.
 constexpr int PLAYER_AI_DANGEROUS_VISIBLE_THREAT = 130; // Threat видимой цели, позволяющий поднять лимит назначенных стрелков.
 constexpr int PLAYER_AI_MANY_ENEMIES_MIN = 5; // Минимум hostile для режима many-enemies pressure.
-constexpr int PLAYER_AI_OUTNUMBERED_MARGIN = 2; // Насколько hostile должны превосходить союзников для outnumbered.
+constexpr int PLAYER_AI_OUTNUMBERED_MARGIN = 8; // Небольшой перевес hostile не должен преждевременно переводить здоровый отряд в survival.
 constexpr int PLAYER_AI_BADLY_EXPOSED_MIN_ALLIES = 2; // Минимум засвеченных союзников для squadBadlyExposed.
 constexpr int PLAYER_AI_BADLY_EXPOSED_DIVISOR = 3; // Доля отряда, засветка которой считается badly exposed.
 constexpr int PLAYER_AI_LAST_ENEMY_LIMIT = 2; // Число hostile, при котором включается hunt-last-enemy.
@@ -74,7 +74,7 @@ constexpr int PLAYER_AI_EARLY_PRESSURE_MIN_ALLIES = 5; // Минимум акт�
 constexpr int PLAYER_AI_SURVIVAL_ALLY_LIMIT = 3; // Размер отряда, при котором survive включается без доп. условий.
 constexpr int PLAYER_AI_SURVIVAL_WOUNDED_DIVISOR = 4; // Доля раненых, после которой outnumbered считается survival pressure.
 constexpr int PLAYER_AI_LATE_SURVIVAL_TURN = 2; // После этого хода включается late outnumbered pressure.
-constexpr int PLAYER_AI_LATE_SURVIVAL_HOSTILE_MARGIN = 5; // Перевес hostile для late outnumbered pressure.
+constexpr int PLAYER_AI_LATE_SURVIVAL_HOSTILE_MARGIN = 10; // Поздний survival включается только при действительно тяжелом численном перевесе.
 constexpr int PLAYER_AI_ASSIGNMENT_DISTANCE_PENALTY = 3; // Штраф score назначения за каждую клетку дистанции до цели.
 constexpr int PLAYER_AI_SMALL_VISIBLE_CONTACT_LIMIT = 2; // Количество видимых контактов, которое planner считает малым.
 constexpr int PLAYER_AI_SIEGE_ROOM_CONTACT_LIMIT = 2; // Минимум комнатных контактов для явного siege-room режима.
@@ -477,10 +477,10 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 		&& _save->getTurn() <= PLAYER_AI_EARLY_PRESSURE_TURN_LIMIT
 		&& activeAllies >= PLAYER_AI_EARLY_PRESSURE_MIN_ALLIES
 		&& _plan.activeHostiles > PLAYER_AI_LAST_ENEMY_LIMIT
-		&& _plan.activeHostiles <= activeAllies
+		&& _plan.activeHostiles <= activeAllies + PLAYER_AI_OUTNUMBERED_MARGIN
 		&& _plan.hiddenContacts > 0
 		&& _plan.visibleContacts == 0
-		&& _plan.roomContacts == 0
+		&& _plan.openAreaContacts > 0
 		&& _plan.exposedAllies <= std::max(PLAYER_AI_BADLY_EXPOSED_MIN_ALLIES, activeAllies / PLAYER_AI_BADLY_EXPOSED_DIVISOR))
 	{
 		_plan.strategy = PFS_INITIAL_DEPLOY;
