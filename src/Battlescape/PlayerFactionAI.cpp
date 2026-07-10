@@ -119,7 +119,7 @@ std::vector<PlayerTurnActionMemory> playerTurnActionMemory;
 
 std::vector<SavedBattleGame*> playerInitialBattleLogs;
 
-constexpr int PLAYER_AI_PERCENT = 100; // База для процентных расчетов.
+constexpr int PLAYER_AI_PERCENT = 110; // База для процентных расчетов.
 constexpr int PLAYER_AI_REJECT_SCORE = -100000; // Sentinel-score для заведомо неприемлемого варианта.
 constexpr int PLAYER_AI_MEMORY_LIMIT_SMALL = 64; // Лимит коротких списков памяти/планов, чтобы они не росли между боями.
 constexpr int PLAYER_AI_MEMORY_LIMIT_LARGE = 512; // Лимит длинных списков памяти движения/действий юнитов.
@@ -230,21 +230,21 @@ constexpr int PLAYER_AI_ODDS_INITIAL_COMBAT = 65; // Множитель combat o
 constexpr int PLAYER_AI_ODDS_INITIAL_PATROL = 18; // Множитель patrol odds для initial deploy.
 constexpr int PLAYER_AI_ODDS_INITIAL_FIRE_SUPPORT_AMBUSH = 125; // Доп. ambush множитель marksman/heavy в initial deploy.
 constexpr int PLAYER_AI_ODDS_INITIAL_ASSAULT_COMBAT = 110; // Доп. combat множитель assault в initial deploy.
-constexpr int PLAYER_AI_ODDS_DEFEND_ESCAPE = 110; // Множитель escape odds для defend line.
-constexpr int PLAYER_AI_ODDS_DEFEND_AMBUSH = 210; // Множитель ambush odds для defend line.
-constexpr int PLAYER_AI_ODDS_DEFEND_COMBAT = 75; // Множитель combat odds для defend line.
-constexpr int PLAYER_AI_ODDS_DEFEND_PATROL = 35; // Множитель patrol odds для defend line.
+constexpr int PLAYER_AI_ODDS_DEFEND_ESCAPE = 100; // Множитель escape odds для defend line.
+constexpr int PLAYER_AI_ODDS_DEFEND_AMBUSH = 180; // Множитель ambush odds для defend line.
+constexpr int PLAYER_AI_ODDS_DEFEND_COMBAT = 95; // Множитель combat odds для defend line.
+constexpr int PLAYER_AI_ODDS_DEFEND_PATROL = 45; // Множитель patrol odds для defend line.
 constexpr int PLAYER_AI_ODDS_DEFEND_FIRE_SUPPORT_AMBUSH = 125; // Доп. ambush множитель marksman/heavy в defend line.
 constexpr int PLAYER_AI_ODDS_DEFEND_ASSAULT_COMBAT = 115; // Доп. combat множитель assault в defend line.
-constexpr int PLAYER_AI_ODDS_SIEGE_ESCAPE = 115; // Множитель escape odds для siege room.
-constexpr int PLAYER_AI_ODDS_SIEGE_AMBUSH = 240; // Множитель ambush odds для siege room.
-constexpr int PLAYER_AI_ODDS_SIEGE_COMBAT = 70; // Множитель combat odds для siege room.
-constexpr int PLAYER_AI_ODDS_SIEGE_PATROL = 20; // Множитель patrol odds для siege room.
+constexpr int PLAYER_AI_ODDS_SIEGE_ESCAPE = 100; // Множитель escape odds для siege room.
+constexpr int PLAYER_AI_ODDS_SIEGE_AMBUSH = 210; // Множитель ambush odds для siege room.
+constexpr int PLAYER_AI_ODDS_SIEGE_COMBAT = 90; // Множитель combat odds для siege room.
+constexpr int PLAYER_AI_ODDS_SIEGE_PATROL = 30; // Множитель patrol odds для siege room.
 constexpr int PLAYER_AI_ODDS_SIEGE_ENTRY_AMBUSH = 125; // Доп. ambush множитель assault/melee в siege room.
 constexpr int PLAYER_AI_ODDS_SIEGE_MARKSMAN_COMBAT = 80; // Доп. combat множитель marksman в siege room.
-constexpr int PLAYER_AI_ODDS_HOLD_ESCAPE = 105; // Множитель escape odds для hold reaction.
-constexpr int PLAYER_AI_ODDS_HOLD_AMBUSH = 260; // Множитель ambush odds для hold reaction.
-constexpr int PLAYER_AI_ODDS_HOLD_COMBAT = 55; // Множитель combat odds для hold reaction.
+constexpr int PLAYER_AI_ODDS_HOLD_ESCAPE = 95; // Множитель escape odds для hold reaction.
+constexpr int PLAYER_AI_ODDS_HOLD_AMBUSH = 220; // Множитель ambush odds для hold reaction.
+constexpr int PLAYER_AI_ODDS_HOLD_COMBAT = 70; // Множитель combat odds для hold reaction.
 constexpr int PLAYER_AI_ODDS_HOLD_PATROL = 20; // Множитель patrol odds для hold reaction.
 constexpr int PLAYER_AI_ODDS_HOLD_SUPPORT_AMBUSH = 120; // Доп. ambush множитель support/marksman в hold reaction.
 constexpr int PLAYER_AI_ODDS_ASSAULT_ESCAPE = 70; // Множитель escape odds для assault.
