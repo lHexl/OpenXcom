@@ -74,7 +74,7 @@ constexpr int PLAYER_AI_EARLY_PRESSURE_MIN_ALLIES = 5; // Минимум акт�
 constexpr int PLAYER_AI_SURVIVAL_ALLY_LIMIT = 3; // Размер отряда, при котором survive включается без доп. условий.
 constexpr int PLAYER_AI_SURVIVAL_WOUNDED_DIVISOR = 4; // Доля раненых, после которой outnumbered считается survival pressure.
 constexpr int PLAYER_AI_LATE_SURVIVAL_TURN = 2; // После этого хода включается late outnumbered pressure.
-constexpr int PLAYER_AI_LATE_SURVIVAL_HOSTILE_MARGIN = 10; // Поздний survival включается только при действительно тяжелом численном перевесе.
+constexpr int PLAYER_AI_LATE_SURVIVAL_HOSTILE_MARGIN = 10; // Групповой skirmish включается только при критическом, а не временном численном перевесе.
 constexpr int PLAYER_AI_ASSIGNMENT_DISTANCE_PENALTY = 3; // Штраф score назначения за каждую клетку дистанции до цели.
 constexpr int PLAYER_AI_SMALL_VISIBLE_CONTACT_LIMIT = 2; // Количество видимых контактов, которое planner считает малым.
 constexpr int PLAYER_AI_SIEGE_ROOM_CONTACT_LIMIT = 2; // Минимум комнатных контактов для явного siege-room режима.
@@ -132,6 +132,8 @@ const char *PlayerFactionPlanner::getStrategyName() const
 		return "survive";
 	case PFS_RETREAT_REGROUP:
 		return "retreat_regroup";
+	case PFS_SKIRMISH:
+		return "skirmish";
 	case PFS_ASSAULT:
 		return "assault";
 	case PFS_HOLD_REACTION:
@@ -495,7 +497,9 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	}
 	else if (realSurvivalPressure)
 	{
-		_plan.strategy = PFS_SURVIVE;
+		const bool criticalMinority = activeAllies > PLAYER_AI_SURVIVAL_ALLY_LIMIT
+			&& _plan.activeHostiles >= activeAllies + PLAYER_AI_LATE_SURVIVAL_HOSTILE_MARGIN;
+		_plan.strategy = criticalMinority ? PFS_SKIRMISH : PFS_SURVIVE;
 	}
 	else if (dangerousRoomProblem && _plan.roomContacts >= PLAYER_AI_SIEGE_ROOM_CONTACT_LIMIT && (mostlyHidden || _plan.visibleContacts == 0))
 	{
@@ -548,7 +552,7 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 				: ((_plan.enemies.size() == 1 || _save->getTurn() >= PLAYER_AI_HIDDEN_ASSIGN_ALL_TURN)
 					? (int)_plan.allies.size()
 					: std::min((int)_plan.allies.size(), (contact.canShootBy.empty() && contact.visibleBy.empty()) ? PLAYER_AI_HIDDEN_BLIND_ASSIGNEE_LIMIT : PLAYER_AI_HIDDEN_SEEN_ASSIGNEE_LIMIT));
-			if (!contact.visibleContact && (_plan.strategy == PFS_DEFEND_LINE || _plan.strategy == PFS_HOLD_REACTION || _plan.strategy == PFS_SURVIVE))
+			if (!contact.visibleContact && (_plan.strategy == PFS_DEFEND_LINE || _plan.strategy == PFS_HOLD_REACTION || _plan.strategy == PFS_SURVIVE || _plan.strategy == PFS_SKIRMISH))
 			{
 				maxAssignees = std::min(maxAssignees, _plan.strategy == PFS_SURVIVE ? PLAYER_AI_HIDDEN_SURVIVE_ASSIGNEE_LIMIT : PLAYER_AI_HIDDEN_DEFENSIVE_ASSIGNEE_LIMIT);
 			}

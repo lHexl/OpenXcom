@@ -117,7 +117,39 @@ struct PlayerTurnActionMemory
 	bool firedThisTurn;
 };
 
+enum PlayerDynamicGroupRole
+{
+	PDGR_POINT,
+	PDGR_FIRE,
+	PDGR_GUARD
+};
+
+enum PlayerDynamicGroupTask
+{
+	PDGT_MANEUVER,
+	PDGT_FIRE_SUPPORT,
+	PDGT_RESERVE
+};
+
+struct PlayerDynamicGroupInfo
+{
+	int groupId;
+	int groupSize;
+	PlayerDynamicGroupRole role;
+	PlayerDynamicGroupTask task;
+	bool maneuverGroup;
+};
+
+struct PlayerDynamicGroupLayoutMemory
+{
+	SavedBattleGame *save;
+	int turn;
+	std::vector<int> activeUnitIds;
+	std::vector<int> spatialUnitIds;
+};
+
 std::vector<PlayerTurnActionMemory> playerTurnActionMemory;
+std::vector<PlayerDynamicGroupLayoutMemory> playerDynamicGroupLayoutMemory;
 
 std::vector<SavedBattleGame*> playerInitialBattleLogs;
 
@@ -262,6 +294,12 @@ constexpr int PLAYER_AI_ODDS_SURVIVE_SAFE_AMBUSH = 220; // Ambush odds survive �
 constexpr int PLAYER_AI_ODDS_SURVIVE_COMBAT = 50; // Combat odds survive.
 constexpr int PLAYER_AI_ODDS_SURVIVE_SUPPORT_ESCAPE = 120; // Доп. escape множитель support/heavy в survive.
 constexpr int PLAYER_AI_ODDS_SURVIVE_ASSAULT_AMBUSH = 115; // Доп. ambush множитель assault в survive.
+constexpr int PLAYER_AI_ODDS_SKIRMISH_ESCAPE = 105; // Умеренный отход в режиме боя малыми группами.
+constexpr int PLAYER_AI_ODDS_SKIRMISH_AMBUSH = 165; // Засада/удержание укрытия между короткими огневыми контактами.
+constexpr int PLAYER_AI_ODDS_SKIRMISH_COMBAT = 135; // Достаточное давление, чтобы меньшинство не переставало наносить урон.
+constexpr int PLAYER_AI_ODDS_SKIRMISH_PATROL = 30; // Минимум открытого патрулирования при численном меньшинстве.
+constexpr int PLAYER_AI_ODDS_SKIRMISH_SUPPORT_AMBUSH = 120; // Fire-support чаще удерживает дальнее укрытие.
+constexpr int PLAYER_AI_ODDS_SKIRMISH_FRONT_COMBAT = 115; // Assault/scout сохраняют возможность короткой атаки.
 constexpr int PLAYER_AI_ODDS_RETREAT_ESCAPE = 300; // Множитель escape odds для retreat regroup.
 constexpr int PLAYER_AI_ODDS_RETREAT_AMBUSH = 75; // Множитель ambush odds для retreat regroup.
 constexpr int PLAYER_AI_ODDS_RETREAT_COMBAT = 35; // Множитель combat odds для retreat regroup.
@@ -393,7 +431,7 @@ constexpr int PLAYER_AI_SMOKE_MIN_THROW_RESERVE = 4; // Минимальный T
 constexpr int PLAYER_AI_SMOKE_INITIAL_TURN_LIMIT = 3; // Ходы, когда smoke screen особо полезен для выхода из стартовой зоны.
 constexpr int PLAYER_AI_SMOKE_INITIAL_KNOWN_ENEMIES = 3; // Known enemies для раннего smoke screen даже без spotting.
 constexpr int PLAYER_AI_SMOKE_PRESSURE_EXPOSURE = 90; // Exposure, с которого дым можно бросать под прямым давлением.
-constexpr int PLAYER_AI_SMOKE_HIGH_EXPOSURE = 120; // Exposure, с которого дым почти всегда оправдан без хорошего выстрела.
+constexpr int PLAYER_AI_SMOKE_HIGH_EXPOSURE = 120; // Exposure, с которого поздний дым оправдан потерей огневого действия.
 constexpr int PLAYER_AI_SMOKE_SUPPORT_IDLE_MIN_ALLIES = 5; // Размер отряда, при котором idle/hold в начале может инициировать дым.
 constexpr int PLAYER_AI_SMOKE_ROOM_ENTRY_LIMIT = 4; // Максимум входов в комнату, при котором smoke breach наиболее полезен.
 constexpr int PLAYER_AI_SMOKE_ROOM_TILE_LIMIT = 160; // Максимальный размер комнаты для smoke breach.
@@ -1287,6 +1325,230 @@ bool updatePlayerFiredThisTurn(SavedBattleGame *save, BattleUnit *unit)
 	return false;
 }
 
+PlayerDynamicGroupInfo getPlayerDynamicGroupInfo(SavedBattleGame *save, BattleUnit *unit)
+{
+	PlayerDynamicGroupInfo result = { 0, 1, PDGR_POINT, PDGT_MANEUVER, true };
+	if (!save || !unit)
+	{
+		return result;
+	}
+	std::vector<BattleUnit*> allies;
+	for (auto *ally : *save->getUnits())
+	{
+		if (ally && !ally->isOut() && ally->getFaction() == FACTION_PLAYER)
+		{
+			allies.push_back(ally);
+		}
+	}
+	std::sort(allies.begin(), allies.end(), [](const BattleUnit *left, const BattleUnit *right)
+	{
+		return left->getId() < right->getId();
+	});
+	std::vector<int> activeUnitIds;
+	for (auto *ally : allies)
+	{
+		activeUnitIds.push_back(ally->getId());
+	}
+	const PlayerDynamicGroupLayoutMemory *cachedLayout = 0;
+	for (const auto &memory : playerDynamicGroupLayoutMemory)
+	{
+		if (memory.save == save && memory.turn == save->getTurn() && memory.activeUnitIds == activeUnitIds)
+		{
+			cachedLayout = &memory;
+			break;
+		}
+	}
+	std::vector<BattleUnit*> spatiallyGrouped;
+	spatiallyGrouped.reserve(allies.size());
+	if (cachedLayout)
+	{
+		for (int unitId : cachedLayout->spatialUnitIds)
+		{
+			auto found = std::find_if(allies.begin(), allies.end(), [unitId](const BattleUnit *ally)
+			{
+				return ally->getId() == unitId;
+			});
+			if (found != allies.end())
+			{
+				spatiallyGrouped.push_back(*found);
+			}
+		}
+	}
+	else
+	{
+		std::vector<BattleUnit*> remaining = allies;
+		while (!remaining.empty())
+		{
+			std::vector<BattleUnit*> group;
+			group.push_back(remaining.front());
+			spatiallyGrouped.push_back(remaining.front());
+			remaining.erase(remaining.begin());
+			while (group.size() < 3 && !remaining.empty())
+			{
+				auto best = remaining.begin();
+				int bestDistance = std::numeric_limits<int>::max();
+				for (auto candidate = remaining.begin(); candidate != remaining.end(); ++candidate)
+				{
+					int distance = 0;
+					for (auto *member : group)
+					{
+						distance += Position::distance2d((*candidate)->getPosition(), member->getPosition())
+							+ std::abs((*candidate)->getPosition().z - member->getPosition().z) * 6;
+					}
+					if (distance < bestDistance || (distance == bestDistance && (*candidate)->getId() < (*best)->getId()))
+					{
+						bestDistance = distance;
+						best = candidate;
+					}
+				}
+				group.push_back(*best);
+				spatiallyGrouped.push_back(*best);
+				remaining.erase(best);
+			}
+		}
+		PlayerDynamicGroupLayoutMemory memory = { save, save->getTurn(), activeUnitIds, std::vector<int>() };
+		for (auto *ally : spatiallyGrouped)
+		{
+			memory.spatialUnitIds.push_back(ally->getId());
+		}
+		playerDynamicGroupLayoutMemory.push_back(memory);
+		if (playerDynamicGroupLayoutMemory.size() > PLAYER_AI_MEMORY_LIMIT_SMALL)
+		{
+			playerDynamicGroupLayoutMemory.erase(playerDynamicGroupLayoutMemory.begin(), playerDynamicGroupLayoutMemory.end() - PLAYER_AI_MEMORY_LIMIT_SMALL);
+		}
+	}
+	allies.swap(spatiallyGrouped);
+	auto own = std::find(allies.begin(), allies.end(), unit);
+	if (own == allies.end())
+	{
+		return result;
+	}
+	const int ownIndex = (int)std::distance(allies.begin(), own);
+	result.groupId = ownIndex / 3;
+	const int groupBegin = result.groupId * 3;
+	const int groupEnd = std::min(groupBegin + 3, (int)allies.size());
+	result.groupSize = groupEnd - groupBegin;
+	int bestGroupId = 0;
+	int bestGroupScore = PLAYER_AI_REJECT_SCORE;
+	std::vector<int> groupFireScores;
+	for (int begin = 0, groupId = 0; begin < (int)allies.size(); begin += 3, ++groupId)
+	{
+		const int end = std::min(begin + 3, (int)allies.size());
+		int score = (end - begin) * 100;
+		int fireScore = (end - begin) * 100;
+		for (int i = begin; i < end; ++i)
+		{
+			BattleUnit *candidate = allies[i];
+			const UnitStats *stats = candidate->getBaseStats();
+			const int maxHealth = std::max(1, stats ? (int)stats->health : candidate->getHealth());
+			const int healthPercent = std::max(0, candidate->getHealth()) * 100 / maxHealth;
+			score += healthPercent * 3
+				+ (stats ? (int)stats->tu : 0)
+				+ (stats ? (int)stats->reactions : 0)
+				- candidate->getFatalWounds() * 100;
+			fireScore += (stats ? (int)stats->firing : 0) * 3
+				+ (stats ? (int)stats->reactions : 0)
+				+ healthPercent
+				- candidate->getFatalWounds() * 80;
+		}
+		groupFireScores.push_back(fireScore);
+		if (score > bestGroupScore)
+		{
+			bestGroupScore = score;
+			bestGroupId = groupId;
+		}
+	}
+	int bestFireGroupId = -1;
+	int bestFireGroupScore = PLAYER_AI_REJECT_SCORE;
+	for (int groupId = 0; groupId < (int)groupFireScores.size(); ++groupId)
+	{
+		if (groupId != bestGroupId && groupFireScores[groupId] > bestFireGroupScore)
+		{
+			bestFireGroupScore = groupFireScores[groupId];
+			bestFireGroupId = groupId;
+		}
+	}
+	result.task = result.groupId == bestGroupId
+		? PDGT_MANEUVER
+		: (result.groupId == bestFireGroupId ? PDGT_FIRE_SUPPORT : PDGT_RESERVE);
+	result.maneuverGroup = result.task == PDGT_MANEUVER;
+
+	BattleUnit *point = 0;
+	int bestPointScore = PLAYER_AI_REJECT_SCORE;
+	for (int i = groupBegin; i < groupEnd; ++i)
+	{
+		BattleUnit *candidate = allies[i];
+		const UnitStats *stats = candidate->getBaseStats();
+		const int maxHealth = std::max(1, stats ? (int)stats->health : candidate->getHealth());
+		const int healthPercent = std::max(0, candidate->getHealth()) * 100 / maxHealth;
+		int score = healthPercent * 3
+			+ (stats ? (int)stats->tu : 0) * 2
+			+ (stats ? (int)stats->reactions : 0)
+			- candidate->getFatalWounds() * 80;
+		if (score > bestPointScore)
+		{
+			bestPointScore = score;
+			point = candidate;
+		}
+	}
+	if (unit == point)
+	{
+		result.role = PDGR_POINT;
+		return result;
+	}
+
+	BattleUnit *fire = 0;
+	int bestFireScore = PLAYER_AI_REJECT_SCORE;
+	for (int i = groupBegin; i < groupEnd; ++i)
+	{
+		BattleUnit *candidate = allies[i];
+		if (candidate == point)
+		{
+			continue;
+		}
+		const UnitStats *stats = candidate->getBaseStats();
+		int score = (stats ? (int)stats->firing : 0) * 3
+			+ (stats ? (int)stats->reactions : 0)
+			+ std::max(0, candidate->getHealth())
+			- candidate->getFatalWounds() * 60;
+		if (score > bestFireScore)
+		{
+			bestFireScore = score;
+			fire = candidate;
+		}
+	}
+	result.role = unit == fire ? PDGR_FIRE : PDGR_GUARD;
+	return result;
+}
+
+const char *getPlayerDynamicGroupRoleName(PlayerDynamicGroupRole role)
+{
+	switch (role)
+	{
+	case PDGR_POINT:
+		return "point";
+	case PDGR_FIRE:
+		return "fire";
+	case PDGR_GUARD:
+	default:
+		return "guard";
+	}
+}
+
+const char *getPlayerDynamicGroupTaskName(PlayerDynamicGroupTask task)
+{
+	switch (task)
+	{
+	case PDGT_MANEUVER:
+		return "maneuver";
+	case PDGT_FIRE_SUPPORT:
+		return "fire_support";
+	case PDGT_RESERVE:
+	default:
+		return "reserve";
+	}
+}
+
 }
 
 /**
@@ -1807,7 +2069,38 @@ const char *PlayerFactionAI::getPlayerTacticalRoleName(PlayerAITacticalRole role
 
 PlayerFactionStrategy PlayerFactionAI::getFactionStrategy() const
 {
-	return _factionAI ? _factionAI->getPlayerStrategy() : PFS_HOLD_REACTION;
+	const PlayerFactionStrategy globalStrategy = _factionAI ? _factionAI->getPlayerStrategy() : PFS_HOLD_REACTION;
+	if (_unit->getFaction() != FACTION_PLAYER || globalStrategy != PFS_SKIRMISH)
+	{
+		return globalStrategy;
+	}
+	int activeAllies = 0;
+	for (auto *ally : *_save->getUnits())
+	{
+		if (ally && !ally->isOut() && ally->getFaction() == FACTION_PLAYER)
+		{
+			++activeAllies;
+		}
+	}
+	if (activeAllies < 4)
+	{
+		return globalStrategy;
+	}
+	const PlayerDynamicGroupInfo group = getPlayerDynamicGroupInfo(_save, _unit);
+	const bool badlyWounded = _unit->getHealth() < std::max(1, _unit->getBaseStats()->health / 2) || _unit->getFatalWounds() > 1;
+	if (badlyWounded)
+	{
+		return PFS_SURVIVE;
+	}
+	if (group.task == PDGT_MANEUVER)
+	{
+		return PFS_SKIRMISH;
+	}
+	if (group.task == PDGT_FIRE_SUPPORT)
+	{
+		return PFS_DEFEND_LINE;
+	}
+	return PFS_HOLD_REACTION;
 }
 
 const char *PlayerFactionAI::getFactionStrategyName(PlayerFactionStrategy strategy) const
@@ -1826,6 +2119,8 @@ const char *PlayerFactionAI::getFactionStrategyName(PlayerFactionStrategy strate
 		return "survive";
 	case PFS_RETREAT_REGROUP:
 		return "retreat_regroup";
+	case PFS_SKIRMISH:
+		return "skirmish";
 	case PFS_ASSAULT:
 		return "assault";
 	case PFS_HOLD_REACTION:
@@ -1921,6 +2216,20 @@ void PlayerFactionAI::applyFactionStrategyToModeOdds(PlayerFactionStrategy strat
 		else if (role == ROLE_ASSAULT)
 		{
 			*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_SURVIVE_ASSAULT_AMBUSH);
+		}
+		break;
+	case PFS_SKIRMISH:
+		*escapeOdds = scale(*escapeOdds, PLAYER_AI_ODDS_SKIRMISH_ESCAPE);
+		*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_SKIRMISH_AMBUSH);
+		*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_SKIRMISH_COMBAT);
+		*patrolOdds = scale(*patrolOdds, PLAYER_AI_ODDS_SKIRMISH_PATROL);
+		if (role == ROLE_SUPPORT || role == ROLE_MARKSMAN || role == ROLE_HEAVY)
+		{
+			*ambushOdds = scale(*ambushOdds, PLAYER_AI_ODDS_SKIRMISH_SUPPORT_AMBUSH);
+		}
+		else if (role == ROLE_ASSAULT || role == ROLE_MELEE)
+		{
+			*combatOdds = scale(*combatOdds, PLAYER_AI_ODDS_SKIRMISH_FRONT_COMBAT);
 		}
 		break;
 	case PFS_RETREAT_REGROUP:
@@ -2561,6 +2870,8 @@ void PlayerFactionAI::think(BattleAction *action)
 	const PlayerAIRole playerRole = _unit->getFaction() == FACTION_PLAYER ? getPlayerAIRole(action->weapon) : ROLE_ASSAULT;
 	const PlayerAITacticalRole tacticalRole = _unit->getFaction() == FACTION_PLAYER ? getPlayerTacticalRole(action->weapon, playerRole) : TACTICAL_ASSAULT;
 	const PlayerFactionStrategy factionStrategy = _unit->getFaction() == FACTION_PLAYER ? getFactionStrategy() : PFS_ASSAULT;
+	const PlayerFactionStrategy globalFactionStrategy = (_unit->getFaction() == FACTION_PLAYER && _factionAI) ? _factionAI->getPlayerStrategy() : factionStrategy;
+	const PlayerDynamicGroupInfo dynamicGroup = _unit->getFaction() == FACTION_PLAYER ? getPlayerDynamicGroupInfo(_save, _unit) : PlayerDynamicGroupInfo{ 0, 1, PDGR_POINT, PDGT_MANEUVER, true };
 	int playerActiveAllies = 0;
 	int playerActiveHostiles = 0;
 	int playerMaxHostileHealth = 0;
@@ -2635,6 +2946,12 @@ void PlayerFactionAI::think(BattleAction *action)
 			<< ", role=" << getPlayerAIRoleName(playerRole)
 			<< ", tactical=" << getPlayerTacticalRoleName(tacticalRole)
 			<< ", strategy=" << getFactionStrategyName(factionStrategy)
+			<< ", globalStrategy=" << getFactionStrategyName(globalFactionStrategy)
+			<< ", group=" << dynamicGroup.groupId
+			<< ", groupSize=" << dynamicGroup.groupSize
+			<< ", groupRole=" << getPlayerDynamicGroupRoleName(dynamicGroup.role)
+			<< ", groupTask=" << getPlayerDynamicGroupTaskName(dynamicGroup.task)
+			<< ", maneuverGroup=" << dynamicGroup.maneuverGroup
 			<< ", weapon=" << (action->weapon ? action->weapon->getRules()->getType() : "none")
 			<< ", weaponScore=" << scoreWeaponForUnit(action->weapon)
 			<< ", preferredRange=" << preferredRange
@@ -2889,6 +3206,31 @@ void PlayerFactionAI::think(BattleAction *action)
 			else
 			{
 				_attackAction = savedAttack;
+			}
+		}
+	}
+	if (_unit->getFaction() == FACTION_PLAYER
+		&& action->number == 2
+		&& firedThisTurn
+		&& _attackAction.type == BA_RETHINK
+		&& !currentGrenadeDanger)
+	{
+		const int currentExposure = getEnemyFireExposure(_unit->getPosition());
+		const int currentFireLines = countEnemyFireLines(_unit->getPosition());
+		const bool exposedAfterShot = currentFireLines > 0
+			&& (_spottingEnemies > 0 || currentExposure >= 70 || _visibleEnemies > 0);
+		if (exposedAfterShot && setupFallbackCoverMove(currentExposure >= 90 ? 85 : 100, 0, 0, 0))
+		{
+			if (Options::autoBattleLog)
+			{
+				std::ostringstream log;
+				log << "Player faction post-shot line break: unit=" << _unit->getId()
+					<< ", exposure=" << currentExposure
+					<< ", fireLines=" << currentFireLines
+					<< ", spotting=" << _spottingEnemies
+					<< ", visible=" << _visibleEnemies
+					<< ", reason=no_useful_followup_attack";
+				_save->appendToAutoBattleLog(log.str());
 			}
 		}
 	}
@@ -4051,9 +4393,10 @@ factionRoomTacticsDone:
 			|| strategy == PFS_DEFEND_LINE
 			|| strategy == PFS_HOLD_REACTION
 			|| strategy == PFS_SIEGE_ROOM
+			|| strategy == PFS_SKIRMISH
 			|| strategy == PFS_HUNT_LAST_ENEMY;
-		const int stagingHoldThreshold = strategy == PFS_HUNT_LAST_ENEMY ? std::max(12, baseTU / 2) : 8;
-		const bool alreadyStagedThisTurn = spentTU >= stagingHoldThreshold && (_save->getTurn() <= 2 || strategy == PFS_HUNT_LAST_ENEMY);
+		const int stagingHoldThreshold = (strategy == PFS_HUNT_LAST_ENEMY || strategy == PFS_SKIRMISH) ? std::max(12, baseTU / 2) : 8;
+		const bool alreadyStagedThisTurn = spentTU >= stagingHoldThreshold && (_save->getTurn() <= 2 || strategy == PFS_HUNT_LAST_ENEMY || strategy == PFS_SKIRMISH);
 		if (earlyCautiousStrategy && alreadyStagedThisTurn)
 		{
 			if (Options::autoBattleLog)
@@ -5408,7 +5751,7 @@ void PlayerFactionAI::setupAttack()
 	{
 		BattleUnit *assignedTarget = _factionAI->getAssignedTarget(_unit);
 		const PlayerFactionStrategy strategy = getFactionStrategy();
-		const bool defensiveHiddenContact = strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP;
+		const bool defensiveHiddenContact = strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP || strategy == PFS_SKIRMISH;
 		if (assignedTarget && !assignedTarget->isOut()
 			&& !isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), assignedTarget)
 			&& _rifle && (!defensiveHiddenContact || _visibleEnemies > 0 || _spottingEnemies > 0))
@@ -6809,7 +7152,7 @@ int PlayerFactionAI::scoreFiringMode(BattleAction *action, BattleUnit *target, b
 		}
 		if (action->type == BA_AUTOSHOT && distance <= preferred + 1)
 		{
-			roleScoreModifier += 22;
+			roleScoreModifier += 35;
 		}
 		if (action->type == BA_SNAPSHOT && target && target->getHealth() > 0 && target->getHealth() <= 35)
 		{
@@ -7171,7 +7514,15 @@ void PlayerFactionAI::evaluateAIMode()
 				++activeAllies;
 			}
 		}
-		if ((strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP) && _escapeTUs && (_spottingEnemies || badlyWounded || !usefulAttack))
+		if (strategy == PFS_SKIRMISH && usefulAttack && (_visibleEnemies || _spottingEnemies))
+		{
+			_AIMode = AI_COMBAT;
+		}
+		else if (strategy == PFS_SKIRMISH && _ambushTUs && !_visibleEnemies && !_spottingEnemies)
+		{
+			_AIMode = AI_AMBUSH;
+		}
+		else if ((strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP) && _escapeTUs && (_spottingEnemies || badlyWounded || !usefulAttack))
 		{
 			_AIMode = AI_ESCAPE;
 		}
@@ -7434,6 +7785,7 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 			|| strategy == PFS_DEFEND_LINE
 			|| strategy == PFS_SIEGE_ROOM
 			|| strategy == PFS_HOLD_REACTION
+			|| strategy == PFS_SKIRMISH
 			|| strategy == PFS_SURVIVE);
 	const bool cautiousLastEnemyHunt = strategy == PFS_HUNT_LAST_ENEMY
 		&& !targetVisible
@@ -8380,7 +8732,7 @@ bool PlayerFactionAI::setupSmokeScreen()
 		}
 	}
 	const bool directPressure = currentSpotters > 0 || currentFireLines > 0 || currentExposure >= PLAYER_AI_SMOKE_PRESSURE_EXPOSURE;
-	const bool highPressure = currentExposure >= PLAYER_AI_SMOKE_HIGH_EXPOSURE || currentSpotters >= PLAYER_AI_NEARBY_SPOTTER_LIMIT || currentFireLines > 0;
+	const bool highPressure = currentExposure >= PLAYER_AI_SMOKE_HIGH_EXPOSURE || currentSpotters >= PLAYER_AI_NEARBY_SPOTTER_LIMIT || currentFireLines >= 2;
 	const bool earlyDeploySmoke = _save->getTurn() <= PLAYER_AI_SMOKE_INITIAL_TURN_LIMIT
 		&& _knownEnemies >= PLAYER_AI_SMOKE_INITIAL_KNOWN_ENEMIES
 		&& !_visibleEnemies
@@ -8397,17 +8749,18 @@ bool PlayerFactionAI::setupSmokeScreen()
 	{
 	case PFS_INITIAL_DEPLOY:
 	case PFS_DEFEND_LINE:
-		allowedByStrategy = earlyDeploySmoke || directPressure;
+		allowedByStrategy = earlyDeploySmoke || highPressure;
 		break;
 	case PFS_SIEGE_ROOM:
-		allowedByStrategy = roomBreachSmoke || directPressure;
+		allowedByStrategy = roomBreachSmoke || highPressure;
 		break;
 	case PFS_SURVIVE:
 	case PFS_RETREAT_REGROUP:
-		allowedByStrategy = directPressure;
+	case PFS_SKIRMISH:
+		allowedByStrategy = highPressure;
 		break;
 	case PFS_HOLD_REACTION:
-		allowedByStrategy = directPressure && !_visibleEnemies;
+		allowedByStrategy = highPressure && !_visibleEnemies;
 		break;
 	case PFS_ASSAULT:
 		allowedByStrategy = false;
@@ -8571,7 +8924,7 @@ bool PlayerFactionAI::setupSmokeScreen()
 				score += PLAYER_AI_SMOKE_ENTRY_BONUS;
 			}
 		}
-		if (strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP)
+		if (strategy == PFS_SURVIVE || strategy == PFS_RETREAT_REGROUP || strategy == PFS_SKIRMISH)
 		{
 			score += PLAYER_AI_SMOKE_SURVIVE_BONUS;
 		}
@@ -9661,7 +10014,9 @@ void PlayerFactionAI::extendedFireModeChoice(BattleActionCost& costAuto, BattleA
 		// Add a random factor to the firing mode score based on intelligence
 		// An intelligence value of 10 will decrease this random factor to 0
 		// Default values for and intelligence value of 0 will make this a 50% to 150% roll
-		int intelligenceModifier = _save->getMod()->getAIFireChoiceIntelCoeff() * std::max(10 - _unit->getIntelligence(), 0);
+		int intelligenceModifier = _unit->getFaction() == FACTION_PLAYER
+			? 0
+			: _save->getMod()->getAIFireChoiceIntelCoeff() * std::max(10 - _unit->getIntelligence(), 0);
 		newScore = newScore * (100 + RNG::generate(-intelligenceModifier, intelligenceModifier)) / 100;
 
 		// More aggressive units get a modifier to the score for autoshots
