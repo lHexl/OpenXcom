@@ -37,6 +37,7 @@ constexpr int PLAYER_AI_OPEN_ROOM_TILE_LIMIT = 90; // Размер комнат�
 constexpr int PLAYER_AI_BASE_ENEMY_THREAT = 40; // Базовая угроза любого активного hostile.
 constexpr int PLAYER_AI_ARMED_THREAT_BONUS = 35; // Бонус угрозы за оружие в основной руке.
 constexpr int PLAYER_AI_MELEE_THREAT_BONUS = 20; // Бонус угрозы за melee-оружие.
+constexpr int PLAYER_AI_PSI_THREAT_BONUS = 140; // Псионик опасен даже без линии огня: panic/mind control быстро ломают малую группу.
 constexpr int PLAYER_AI_REJECT_SCORE = -100000; // Sentinel-score для невозможного назначения.
 constexpr int PLAYER_AI_MIN_PRESSURE_ACCURACY = 30; // Минимальная точность, используемая при оценке pressure оружия.
 constexpr int PLAYER_AI_PRESSURE_PERCENT = 100; // База процентной формулы expected pressure.
@@ -397,6 +398,10 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 		contact.visibleContact = !contact.visibleBy.empty();
 		if (contact.visibleContact)
 		{
+			if (enemy->getUtilityWeapon(BT_PSIAMP))
+			{
+				contact.threatScore += PLAYER_AI_PSI_THREAT_BONUS;
+			}
 			++_plan.visibleContacts;
 			contact.focusScore = PLAYER_AI_VISIBLE_BY_FOCUS_BONUS * (int)contact.visibleBy.size() + PLAYER_AI_CAN_SHOOT_BY_FOCUS_BONUS * (int)contact.canShootBy.size();
 			_plan.enemies.push_back(contact);
@@ -416,6 +421,19 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	}
 	if (_plan.enemies.empty() && !hiddenContacts.empty())
 	{
+		// A hidden psi operator is worth a dedicated hunt only after the ordinary
+		// screen has been reduced.  Giving the full global-threat bonus while a large
+		// enemy force is still unseen sends the whole deployment past closer contacts.
+		if ((int)hiddenContacts.size() <= PLAYER_AI_SMALL_FORCE_HUNT_LIMIT)
+		{
+			for (auto &contact : hiddenContacts)
+			{
+				if (contact.enemy && contact.enemy->getUtilityWeapon(BT_PSIAMP))
+				{
+					contact.threatScore += PLAYER_AI_PSI_THREAT_BONUS;
+				}
+			}
+		}
 		std::sort(hiddenContacts.begin(), hiddenContacts.end(), [](const PlayerFactionEnemyContact &a, const PlayerFactionEnemyContact &b)
 		{
 			return a.threatScore + a.focusScore > b.threatScore + b.focusScore;

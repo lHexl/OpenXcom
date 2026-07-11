@@ -6326,6 +6326,22 @@ factionRoomTacticsDone:
 			const int currentContactDist = Position::distance2d(_unit->getPosition(), contactPos);
 			const int currentTargetDist = Position::distance2d(_unit->getPosition(), action->target);
 			const int currentCover = cautiousCoverScore(_unit->getPosition());
+			int nearbyUncoveredDeploymentAllies = 0;
+			for (auto *ally : *_save->getUnits())
+			{
+				if (ally && ally != _unit && !ally->isOut() && ally->getFaction() == _unit->getFaction()
+					&& ally->getPosition().z == _unit->getPosition().z
+					&& Position::distance2d(ally->getPosition(), _unit->getPosition()) <= 6
+					&& cautiousCoverScore(ally->getPosition()) == 0)
+				{
+					++nearbyUncoveredDeploymentAllies;
+				}
+			}
+			const bool strandedDeploymentCluster = _save->getTurn() <= 12
+				&& _unit->getPosition().z > 0
+				&& currentCover == 0
+				&& activeHostiles >= 6
+				&& nearbyUncoveredDeploymentAllies >= 3;
 			const int cautiousCurrentSpotters = getSpottingUnits(_unit->getPosition());
 			const int cautiousCurrentExposure = getEnemyFireExposure(_unit->getPosition());
 			const int cautiousCurrentFireLines = countEnemyFireLines(_unit->getPosition());
@@ -6363,7 +6379,7 @@ factionRoomTacticsDone:
 				{
 					continue;
 				}
-				const bool cautiousRampStep = strategy == PFS_INITIAL_DEPLOY
+				const bool cautiousRampStep = (strategy == PFS_INITIAL_DEPLOY || strandedDeploymentCluster)
 					&& pos.z == _unit->getPosition().z - 1;
 				if ((!cautiousRampStep && pos.z != _unit->getPosition().z) || tile->getDangerous() || (tile->getUnit() && tile->getUnit() != _unit))
 				{
@@ -6460,6 +6476,13 @@ factionRoomTacticsDone:
 					continue;
 				}
 				int score = contactDist * 12 + targetDist * 2 + moveTU * 2 + allyCrowdingPenaltyAt(pos);
+				if (strandedDeploymentCluster)
+				{
+					// Keep the rear of a crowded deployment moving after the two-turn global
+					// deployment mode ends.  Descending out of an uncovered transport queue is
+					// much more valuable than another one-tile shuffle on the ramp deck.
+					score += pos.z == _unit->getPosition().z ? 90 : -240;
+				}
 				score -= cover * 8;
 				score -= std::max(0, currentContactDist - contactDist) * 18;
 				score += spotters * 45;
@@ -6526,6 +6549,7 @@ factionRoomTacticsDone:
 						<< ", strategy=" << getFactionStrategyName(strategy)
 						<< ", lateHunt=" << lateHunt
 						<< ", forcedHunt=" << forcedHunt
+						<< ", deploymentEgress=" << strandedDeploymentCluster
 						<< ", replanAfterProbe=" << cautiousContactProbeReplan;
 					_save->appendToAutoBattleLog(log.str());
 				}
@@ -6780,10 +6804,13 @@ factionRoomTacticsDone:
 							&& blocksReactionLane(unitPos, ally->getPosition(), reactionContact));
 					if (!blocked)
 					{
-						for (auto *visible : *_unit->getVisibleUnits())
+						for (auto *knownTarget : *_save->getUnits())
 						{
-							if (visible && !visible->isOut() && visible->getFaction() == FACTION_HOSTILE
-								&& blocksReactionLane(unitPos, ally->getPosition(), visible->getPosition()))
+							if (knownTarget && !knownTarget->isOut() && knownTarget->getFaction() == FACTION_HOSTILE
+								&& validTarget(knownTarget, true, true)
+								&& Position::distance2d(unitPos, knownTarget->getPosition()) <= 22
+								&& _unit->checkViewSector(knownTarget->getPosition())
+								&& blocksReactionLane(unitPos, ally->getPosition(), knownTarget->getPosition()))
 							{
 								blocked = true;
 								break;
@@ -6824,11 +6851,13 @@ factionRoomTacticsDone:
 							&& blocksReactionLane(shooter->getPosition(), unitPos, reactionContact));
 					if (!blocked)
 					{
-						for (auto *visible : *shooter->getVisibleUnits())
+						for (auto *knownTarget : *_save->getUnits())
 						{
-							if (visible && !visible->isOut() && visible->getFaction() == FACTION_HOSTILE
-								&& shooter->checkViewSector(visible->getPosition())
-								&& blocksReactionLane(shooter->getPosition(), unitPos, visible->getPosition()))
+							if (knownTarget && !knownTarget->isOut() && knownTarget->getFaction() == FACTION_HOSTILE
+								&& validTarget(knownTarget, true, true)
+								&& Position::distance2d(shooter->getPosition(), knownTarget->getPosition()) <= 22
+								&& shooter->checkViewSector(knownTarget->getPosition())
+								&& blocksReactionLane(shooter->getPosition(), unitPos, knownTarget->getPosition()))
 							{
 								blocked = true;
 								break;
@@ -6961,6 +6990,7 @@ factionRoomTacticsDone:
 				{
 					const int currentLaneCount = reactionFriendlyLaneRisk(currentPos, _unit->getTimeUnits());
 					if (currentLaneCount < proposedLaneCount
+						&& (proposedLaneCount / 1000 == 0 || currentLaneCount / 1000 == 0)
 						&& getSpottingUnits(currentPos) <= proposedSpotters
 						&& countEnemyFireLines(currentPos) <= proposedFireLines
 						&& getEnemyFireExposure(currentPos) <= proposedExposure
@@ -6979,6 +7009,17 @@ factionRoomTacticsDone:
 						if (dx == 0 && dy == 0)
 						{
 							continue;
+						}
+						if (action->type == BA_NONE)
+						{
+							const Position contactDelta = reactionContact - proposedPos;
+							const bool lateralStep = abs(contactDelta.y) >= abs(contactDelta.x)
+								? (abs(dx) == 1 && dy == 0)
+								: (dx == 0 && abs(dy) == 1);
+							if (!lateralStep)
+							{
+								continue;
+							}
 						}
 						const Position candidatePos = proposedPos + Position(dx, dy, 0);
 						Tile *tile = _save->getTile(candidatePos);
@@ -7013,7 +7054,8 @@ factionRoomTacticsDone:
 						}
 						const int candidateLaneCount = reactionFriendlyLaneRisk(
 							candidatePos, std::max(0, _unit->getTimeUnits() - moveTU));
-						if (candidateLaneCount >= proposedLaneCount)
+						if (candidateLaneCount >= proposedLaneCount
+							|| (proposedLaneCount / 1000 > 0 && candidateLaneCount / 1000 > 0))
 						{
 							continue;
 						}
@@ -7039,6 +7081,7 @@ factionRoomTacticsDone:
 				{
 					const int currentLaneCount = reactionFriendlyLaneRisk(currentPos, _unit->getTimeUnits());
 					if (currentLaneCount < proposedLaneCount
+						&& (proposedLaneCount / 1000 == 0 || currentLaneCount / 1000 == 0)
 						&& getSpottingUnits(currentPos) <= proposedSpotters
 						&& countEnemyFireLines(currentPos) <= proposedFireLines
 						&& getEnemyFireExposure(currentPos) <= proposedExposure
@@ -7074,18 +7117,157 @@ factionRoomTacticsDone:
 						_save->appendToAutoBattleLog(log.str());
 					}
 				}
-				else if (Options::autoBattleLog)
+				else
 				{
-					std::ostringstream log;
-					log << "Player faction reaction friendly-fire formation unresolved: unit=" << _unit->getId()
-						<< ", position=" << currentPos
-						<< ", proposedTarget=" << proposedPos
-						<< ", contact=" << reactionContact
-						<< ", riskyLanes=" << proposedLaneCount
-						<< ", outgoing=" << proposedLaneCount / 1000
-						<< ", incoming=" << proposedLaneCount % 1000
-						<< ", reason=no_strictly_safer_sidestep_without_worsening_enemy_fire";
-					_save->appendToAutoBattleLog(log.str());
+					const bool stationaryUnsafeShooter = proposedLaneCount / 1000 > 0;
+					int suppressedFacing = -1;
+					int suppressedUnsafeBefore = 0;
+					int suppressedUnsafeAfter = 0;
+					int suppressedSafeOpportunities = 0;
+					int suppressedAllyConeBefore = 0;
+					int suppressedAllyConeAfter = 0;
+					if (stationaryUnsafeShooter)
+					{
+						struct ReactionFacingContact
+						{
+							int direction;
+							bool blocked;
+						};
+						std::vector<ReactionFacingContact> facingContacts;
+						for (auto *knownTarget : *_save->getUnits())
+						{
+							if (!knownTarget || knownTarget->isOut() || knownTarget->getFaction() != FACTION_HOSTILE
+								|| !validTarget(knownTarget, true, true)
+								|| Position::distance2d(currentPos, knownTarget->getPosition()) > 22)
+							{
+								continue;
+							}
+							bool blockedKnownLane = false;
+							for (auto *ally : *_save->getUnits())
+							{
+								if (ally && ally != _unit && !ally->isOut() && ally->getFaction() == FACTION_PLAYER
+									&& blocksReactionLane(currentPos, ally->getPosition(), knownTarget->getPosition()))
+								{
+									blockedKnownLane = true;
+									break;
+								}
+							}
+							ReactionFacingContact contact = {
+								_save->getTileEngine()->getDirectionTo(currentPos, knownTarget->getPosition()),
+								blockedKnownLane
+							};
+							facingContacts.push_back(contact);
+						}
+						auto inFacingSector = [](int facing, int direction) -> bool
+						{
+							const int raw = abs(facing - direction);
+							return std::min(raw, 8 - raw) <= 1;
+						};
+						int bestFacingScore = std::numeric_limits<int>::max();
+						const int currentFacing = _unit->getDirection();
+						for (int facing = 0; facing < 8; ++facing)
+						{
+							int unsafe = 0;
+							int safe = 0;
+							int alliesInCone = 0;
+							for (auto *ally : *_save->getUnits())
+							{
+								if (!ally || ally == _unit || ally->isOut() || ally->getFaction() != FACTION_PLAYER
+									|| ally->getPosition().z != currentPos.z
+									|| Position::distance2d(currentPos, ally->getPosition()) > 12)
+								{
+									continue;
+								}
+								const int allyDirection = _save->getTileEngine()->getDirectionTo(currentPos, ally->getPosition());
+								if (inFacingSector(facing, allyDirection))
+								{
+									++alliesInCone;
+								}
+							}
+							for (const auto &contact : facingContacts)
+							{
+								if (!inFacingSector(facing, contact.direction))
+								{
+									continue;
+								}
+								if (contact.blocked)
+								{
+									++unsafe;
+								}
+								else
+								{
+									++safe;
+								}
+							}
+							const int rawTurn = abs(facing - currentFacing);
+							const int turnDistance = std::min(rawTurn, 8 - rawTurn);
+							const int score = alliesInCone * 2000 + unsafe * 1000 - safe * 25 + turnDistance;
+							if (score < bestFacingScore)
+							{
+								bestFacingScore = score;
+								suppressedFacing = facing;
+								suppressedUnsafeAfter = unsafe;
+								suppressedSafeOpportunities = safe;
+								suppressedAllyConeAfter = alliesInCone;
+							}
+						}
+						for (const auto &contact : facingContacts)
+						{
+							if (contact.blocked && inFacingSector(currentFacing, contact.direction))
+							{
+								++suppressedUnsafeBefore;
+							}
+						}
+						for (auto *ally : *_save->getUnits())
+						{
+							if (ally && ally != _unit && !ally->isOut() && ally->getFaction() == FACTION_PLAYER
+								&& ally->getPosition().z == currentPos.z
+								&& Position::distance2d(currentPos, ally->getPosition()) <= 12)
+							{
+								const int allyDirection = _save->getTileEngine()->getDirectionTo(currentPos, ally->getPosition());
+								if (inFacingSector(currentFacing, allyDirection))
+								{
+									++suppressedAllyConeBefore;
+								}
+							}
+						}
+						if (suppressedFacing < 0)
+						{
+							suppressedFacing = (_save->getTileEngine()->getDirectionTo(currentPos, reactionContact) + 4) % 8;
+						}
+						// Player-controlled units do not execute BattleAction::finalFacing in
+						// UnitWalkBState, even while auto-battle drives them through this AI.
+						// Apply the stance here so checkReactionFire cannot select a shot whose
+						// current lane still contains a squadmate.
+						_unit->lookAt(suppressedFacing);
+						while (_unit->getStatus() == STATUS_TURNING)
+						{
+							_unit->turn();
+						}
+						action->type = BA_NONE;
+						action->target = currentPos;
+						action->finalAction = true;
+						action->kneel = _unit->getArmor()->allowsKneeling(false);
+						_reserve = BA_NONE;
+					}
+					if (Options::autoBattleLog)
+					{
+						std::ostringstream log;
+						log << "Player faction reaction friendly-fire formation unresolved: unit=" << _unit->getId()
+							<< ", position=" << currentPos
+							<< ", proposedTarget=" << proposedPos
+							<< ", contact=" << reactionContact
+							<< ", riskyLanes=" << proposedLaneCount
+							<< ", outgoing=" << proposedLaneCount / 1000
+							<< ", incoming=" << proposedLaneCount % 1000
+							<< ", reactionSuppressed=" << stationaryUnsafeShooter
+							<< ", suppressedFacing=" << suppressedFacing
+							<< ", unsafeSector=" << suppressedUnsafeBefore << "->" << suppressedUnsafeAfter
+							<< ", allyCone=" << suppressedAllyConeBefore << "->" << suppressedAllyConeAfter
+							<< ", safeReactionOpportunities=" << suppressedSafeOpportunities
+							<< ", reason=no_strictly_safer_sidestep_without_worsening_enemy_fire";
+						_save->appendToAutoBattleLog(log.str());
+					}
 				}
 			}
 		}
@@ -8785,6 +8967,13 @@ int PlayerFactionAI::scoreTargetPriority(BattleUnit *target, bool assigned, bool
 			score += distance <= 5 ? 90 : 25;
 		}
 	}
+	if (_unit->getFaction() == FACTION_PLAYER && target->getUtilityWeapon(BT_PSIAMP))
+	{
+		// A psi operator remains lethal through walls and across levels.  Treating it
+		// like an ordinary rifleman lets it dismantle the surviving fire team while
+		// safer but much less urgent targets absorb the squad's shots.
+		score += 160;
+	}
 	if (_attackAction.weapon)
 	{
 		const int preferred = getPreferredEngagementRange(_attackAction.weapon);
@@ -9154,10 +9343,40 @@ bool PlayerFactionAI::selectSpottedUnitForSniper()
 	if (numberOfTargets) // Now that we have a list of valid targets, pick one and return.
 	{
 		int pick = RNG::generate(0, numberOfTargets - 1);
+		int bestPlayerScore = -100000;
+		if (_unit->getFaction() == FACTION_PLAYER)
+		{
+			BattleUnit *assignedTarget = _factionAI ? _factionAI->getAssignedTarget(_unit) : 0;
+			for (int i = 0; i < numberOfTargets; ++i)
+			{
+				BattleUnit *candidate = spottedTargets.at(i).first;
+				const int distance = Position::distance2d(_unit->getPosition(), candidate->getPosition());
+				// All entries are current faction-spotted contacts.  Preserve the planner's
+				// focus assignment and then prefer dangerous, wounded, hittable targets;
+				// do not scatter coordinated fire through a random pick.
+				const int candidateScore = scoreTargetPriority(candidate, candidate == assignedTarget, true, distance);
+				if (candidateScore > bestPlayerScore)
+				{
+					bestPlayerScore = candidateScore;
+					pick = i;
+				}
+			}
+		}
 		_aggroTarget = spottedTargets.at(pick).first;
 		_attackAction.target = _aggroTarget->getPosition();
 		_attackAction.type = spottedTargets.at(pick).second.type;
 		_attackAction.weapon = spottedTargets.at(pick).second.weapon;
+		if (_unit->getFaction() == FACTION_PLAYER && Options::autoBattleLog)
+		{
+			std::ostringstream log;
+			log << "Player faction shared-spot target: unit=" << _unit->getId()
+				<< ", target=" << _aggroTarget->getId()
+				<< ", candidates=" << numberOfTargets
+				<< ", score=" << bestPlayerScore
+				<< ", assigned=" << (_factionAI && _factionAI->getAssignedTarget(_unit) == _aggroTarget)
+				<< ", reason=planner_focus_instead_of_random_spotted_target";
+			_save->appendToAutoBattleLog(log.str());
+		}
 	}
 	else // We didn't find a suitable target
 	{
@@ -9926,7 +10145,9 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 			}
 		}
 		const PlayerDynamicGroupInfo crossLevelGroup = getPlayerDynamicGroupInfo(_save, _unit);
-		if (endgameCrossLevelDiscipline && crossLevelGroup.role == PDGR_POINT && crossLevelGroup.maneuverGroup)
+		const bool finalSmallTeamRoute = activeHostiles == 1 && activeAllies <= 4;
+		const bool designatedCrossLevelScout = crossLevelGroup.role == PDGR_POINT && crossLevelGroup.maneuverGroup;
+		if (endgameCrossLevelDiscipline && (designatedCrossLevelScout || finalSmallTeamRoute))
 		{
 			struct CrossLevelNodeCandidate
 			{
@@ -9946,9 +10167,20 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 				{
 					continue;
 				}
+				int allyCongestion = 0;
+				for (auto *ally : *_save->getUnits())
+				{
+					if (!ally || ally == _unit || ally->isOut() || ally->getFaction() != _unit->getFaction()
+						|| ally->getPosition().z != node->getPosition().z)
+					{
+						continue;
+					}
+					const int allyDistance = Position::distance2d(ally->getPosition(), node->getPosition());
+					allyCongestion += allyDistance == 0 ? 120 : (allyDistance == 1 ? 45 : (allyDistance == 2 ? 15 : 0));
+				}
 				CrossLevelNodeCandidate candidate = {
 					node,
-					Position::distance2d(node->getPosition(), target->getPosition()) * 10
+					Position::distance2d(node->getPosition(), target->getPosition()) * 10 + allyCongestion
 				};
 				nodeCandidates.push_back(candidate);
 			}
@@ -10017,6 +10249,8 @@ bool PlayerFactionAI::setupCleanShotMove(BattleUnit *target)
 						<< ", moveTarget=" << routeMoveTarget
 						<< ", moveTU=" << routeMoveTU
 						<< ", reserveTU=" << crossLevelReserveTU
+						<< ", designatedScout=" << designatedCrossLevelScout
+						<< ", finalSmallTeamRoute=" << finalSmallTeamRoute
 						<< ", reason=follow_real_multilevel_path_instead_of_xy_local_minimum";
 					_save->appendToAutoBattleLog(log.str());
 				}
@@ -14075,7 +14309,8 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 		&& bestRejectedItem->getRules()->getBattleType() != BT_PROXIMITYGRENADE
 		&& (bestRejectedReason.find("throw_too_far") != std::string::npos
 			|| bestRejectedReason.find("no_throw_path") != std::string::npos
-			|| bestRejectedReason.find("trajectory") != std::string::npos))
+			|| bestRejectedReason.find("trajectory") != std::string::npos
+			|| bestRejectedReason.find("near_thrower_object") != std::string::npos))
 	{
 		Tile *targetTile = _save->getTile(bestRejectedTarget);
 		BattleUnit *targetUnit = targetTile ? targetTile->getUnit() : 0;
@@ -14106,6 +14341,7 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 			const int throwAccuracy = BattleUnit::getFiringAccuracy(BattleActionAttack::GetBeforeShoot(stagedThrow), _save->getMod());
 			const int throwLimit = std::max(PLAYER_AI_PROXIMITY_THROW_LIMIT_MIN, throwAccuracy / PLAYER_AI_PROXIMITY_THROW_ACCURACY_DIVISOR);
 			const int currentThrowDist = Position::distance2d(_unit->getPosition(), bestRejectedTarget);
+			const bool needsLateralArcClearance = bestRejectedReason.find("near_thrower_object") != std::string::npos;
 			Position bestStagePos;
 			int bestStageScore = -100000;
 			int bestStageMoveTU = 0;
@@ -14145,7 +14381,9 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 					continue;
 				}
 				const int futureThrowDist = Position::distance2d(pos, bestRejectedTarget);
-				if (futureThrowDist > throwLimit || futureThrowDist >= currentThrowDist - 1)
+				if (futureThrowDist > throwLimit
+					|| (!needsLateralArcClearance && futureThrowDist >= currentThrowDist - 1)
+					|| (needsLateralArcClearance && futureThrowDist > currentThrowDist + 1))
 				{
 					continue;
 				}
@@ -14162,6 +14400,16 @@ void PlayerFactionAI::grenadeAction(int minScore, bool teamSpotted)
 				const int moveTU = _save->getPathfinding()->getTotalTUCost();
 				_save->getPathfinding()->abortPath();
 				if (moveTU > std::max(0, _unit->getTimeUnits() - stagedThrow.Time))
+				{
+					continue;
+				}
+				BattleAction stageRiskAction = stagedThrow;
+				stageRiskAction.target = bestRejectedTarget;
+				std::string stageRejectReason;
+				bool stageHardReject = false;
+				if (!playerCanThrowFromTile(_save, _unit, bestRejectedItem, pos, bestRejectedTarget)
+					|| explosiveProjectileRiskyForAllies(&stageRiskAction, radius, &pos, false,
+						&stageRejectReason, &stageHardReject))
 				{
 					continue;
 				}
