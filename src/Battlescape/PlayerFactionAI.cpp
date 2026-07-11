@@ -1162,6 +1162,16 @@ void recordPlayerSmokePlan(SavedBattleGame *save, UnitFaction faction, const Pos
 	pendingPlayerSmokePlans.push_back(plan);
 }
 
+void clearPlayerSmokePlan(SavedBattleGame *save, UnitFaction faction, const Position &target)
+{
+	cleanupPendingPlayerSmokePlans(save);
+	pendingPlayerSmokePlans.erase(std::remove_if(pendingPlayerSmokePlans.begin(), pendingPlayerSmokePlans.end(),
+		[save, faction, &target](const PendingPlayerSmokePlan &plan)
+		{
+			return plan.save == save && plan.faction == faction && plan.target == target;
+		}), pendingPlayerSmokePlans.end());
+}
+
 bool isPlayerSmokeGrenade(const BattleItem *item)
 {
 	return item
@@ -5109,6 +5119,13 @@ factionRoomTacticsDone:
 			else
 			{
 				clearFailedPendingPlayerGrenadeDanger(_save, action->weapon);
+				if (isPlayerSmokeGrenade(action->weapon))
+				{
+					// setupSmokeScreen records the smoke corridor before the action is
+					// returned.  If the final throw validation fails, do not let a ghost
+					// smoke plan attract later soldiers into an uncovered route.
+					clearPlayerSmokePlan(_save, _unit->getFaction(), action->target);
+				}
 				if (action->weapon->getFuseTimer() >= 0)
 				{
 					action->weapon->setFuseTimer(-1);
@@ -5927,7 +5944,8 @@ factionRoomTacticsDone:
 	}
 
 	if (_unit->getFaction() == FACTION_PLAYER && !evacuatingGrenadeDanger && action->type == BA_WALK
-		&& _knownEnemies && !_fallbackCoverAction && !_cleanShotMoveAction && !_factionSupportMoveAction
+		&& _knownEnemies && !_fallbackCoverAction && !_cleanShotMoveAction
+		&& (!_factionSupportMoveAction || overwhelmingHeavyLanding)
 		&& !_controlledProbeMoveAction
 		&& (!_stalkAmbushAction || (overwhelmingHeavyLanding && _save->getTurn() <= 1 && playerTurnMoveCount > 0))
 		&& !currentGrenadeDanger && !firedThisTurn)
@@ -7943,6 +7961,26 @@ void PlayerFactionAI::setupAttack()
 			}
 			_aggroTarget = savedAggro;
 			_attackAction = savedAction;
+		}
+	}
+
+	if (_unit->getFaction() == FACTION_PLAYER
+		&& _grenade
+		&& _factionAI
+		&& !_visibleEnemies
+		&& _knownEnemies > 0)
+	{
+		BattleUnit *assignedTarget = _factionAI->getAssignedTarget(_unit);
+		if (assignedTarget && !assignedTarget->isOut() && assignedTarget->getTile()
+			&& !isPendingPlayerTimedBlastTarget(_save, _unit->getFaction(), assignedTarget)
+			&& validTarget(assignedTarget, true, true)
+			&& setupHiddenExplosiveStaging(assignedTarget))
+		{
+			// The staging routine existed but was never called.  Without this
+			// bridge, high-HP targets caused the AI to reserve grenade TU every
+			// cycle while ordinary patrol movement spent it without ever creating
+			// a valid throw corridor.
+			return;
 		}
 	}
 
@@ -11380,7 +11418,6 @@ bool PlayerFactionAI::setupSmokeScreen()
 	int bestThrowDistance = 0;
 	int bestAllyPenalty = 0;
 	int bestSmoke = 0;
-	Position originVoxel = _save->getTileEngine()->getOriginVoxel(smokeAction, 0);
 	for (const auto &target : candidates)
 	{
 		Tile *tile = _save->getTile(target);
@@ -11394,6 +11431,10 @@ bool PlayerFactionAI::setupSmokeScreen()
 			continue;
 		}
 		smokeAction.target = target;
+		// getOriginVoxel also uses the action target.  Computing it before the
+		// candidate was assigned made setup accept trajectories which the final
+		// action validation correctly rejected.
+		Position originVoxel = _save->getTileEngine()->getOriginVoxel(smokeAction, 0);
 		Position targetVoxel = target.toVoxel() + Position(PLAYER_AI_THROW_TARGET_VOXEL_XY, PLAYER_AI_THROW_TARGET_VOXEL_XY, (PLAYER_AI_THROW_TARGET_VOXEL_Z_BASE + -tile->getTerrainLevel()));
 		if (!_save->getTileEngine()->validateThrow(smokeAction, originVoxel, targetVoxel, _save->getDepth()))
 		{

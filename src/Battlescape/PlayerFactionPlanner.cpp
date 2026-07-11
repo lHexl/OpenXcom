@@ -527,13 +527,17 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	{
 		_plan.strategy = PFS_INITIAL_DEPLOY;
 	}
-	else if (loneGuerrilla)
-	{
-		_plan.strategy = PFS_SKIRMISH;
-	}
 	else if (lastEnemies || smallForceHunt || lateHunt)
 	{
 		_plan.strategy = PFS_HUNT_LAST_ENEMY;
+	}
+	else if (loneGuerrilla)
+	{
+		// One or two remaining hostiles are an endgame search even when only a
+		// tiny player group survives.  Letting lone-guerrilla skirmish override
+		// lastEnemies left the fire element stationary while its partner searched
+		// alone and the pair were defeated separately.
+		_plan.strategy = PFS_SKIRMISH;
 	}
 	else if (squadBadlyExposed && (outnumbered || squadWoundedUnderContact) && _plan.visibleContacts <= PLAYER_AI_SMALL_VISIBLE_CONTACT_LIMIT)
 	{
