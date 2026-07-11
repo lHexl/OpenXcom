@@ -72,6 +72,8 @@ private:
 	bool _foundBaseModuleToDestroy;
 	bool _stalkAmbushAction;
 	bool _cleanShotMoveAction;
+	bool _crossLevelRouteMoveAction;
+	bool _controlledProbeMoveAction;
 	bool _fallbackCoverAction;
 	bool _factionSupportMoveAction;
 	std::vector<int> _reachable, _reachableWithAttack, _wasHitBy;

@@ -62,6 +62,10 @@ constexpr int PLAYER_AI_ROOM_EXTRA_ENEMY_THREAT_BONUS = 45; // Бонус угр
 constexpr int PLAYER_AI_ROOM_CONTROLLED_OPENING_LIMIT = 2; // Двери/окна, ниже которых комната считается контролируемой/узкой.
 constexpr int PLAYER_AI_HALL_EXTRA_ENEMY_THREAT_BONUS = 20; // Бонус угрозы за дополнительных врагов в hall/open zone.
 constexpr int PLAYER_AI_LATE_HUNT_TURN = 50; // Ход, после которого включается late hunt при малом числе hostile.
+constexpr int PLAYER_AI_SMALL_FORCE_HUNT_TURN = 12; // Малый скрытый остаток нельзя ждать до общего late-hunt turn.
+constexpr int PLAYER_AI_SMALL_FORCE_HUNT_LIMIT = 5; // Пять hidden hostile можно искать только при численном паритете; см. smallForceHunt.
+constexpr int PLAYER_AI_LONE_GUERRILLA_TURN = 24; // После этого хода один-два бойца должны искать скрытого врага короткими перебежками.
+constexpr int PLAYER_AI_LONE_GUERRILLA_HOSTILE_LIMIT = 5; // Максимальный остаток hostile для осторожного lone-guerrilla поиска.
 constexpr int PLAYER_AI_HIDDEN_ASSIGN_ALL_TURN = 16; // Ход, после которого hidden target можно назначать всему отряду.
 constexpr int PLAYER_AI_DANGEROUS_VISIBLE_THREAT = 130; // Threat видимой цели, позволяющий поднять лимит назначенных стрелков.
 constexpr int PLAYER_AI_MANY_ENEMIES_MIN = 5; // Минимум hostile для режима many-enemies pressure.
@@ -88,6 +92,7 @@ constexpr int PLAYER_AI_HIDDEN_DEFENSIVE_ASSIGNEE_LIMIT = 4; // Лимит hidde
 constexpr int PLAYER_AI_SIEGE_HIDDEN_ASSIGNEE_LIMIT = 5; // Лимит hidden assignments при siege-room стратегии.
 constexpr int PLAYER_AI_DANGEROUS_VISIBLE_ASSIGNEE_LIMIT = 5; // Минимальный лимит назначений на опасную видимую цель.
 constexpr int PLAYER_AI_WOUNDED_ASSIGNEE_LIMIT = 6; // Минимальный лимит назначений на раненую цель для добивания.
+constexpr int PLAYER_AI_ASSIGNMENT_SWITCH_MARGIN = 90; // Новый target должен быть заметно лучше, чтобы ломать commitment в том же ходу.
 
 bool playerAIRoomActsOpen(const BattleRoomInfo &room)
 {
@@ -291,7 +296,9 @@ int PlayerFactionPlanner::scoreAssignment(BattleUnit *actor, const PlayerFaction
 	{
 		score -= PLAYER_AI_UNSEEN_VISIBLE_CONTACT_PENALTY;
 	}
-	const bool wounded = contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= PLAYER_AI_WOUNDED_HEALTH_LIMIT;
+	const int focusHealthLimit = std::max(PLAYER_AI_WOUNDED_HEALTH_LIMIT,
+		(int)contact.enemy->getBaseStats()->health * 3 / 5);
+	const bool wounded = contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= focusHealthLimit;
 	score += wounded ? PLAYER_AI_WOUNDED_ASSIGNMENT_BONUS : 0;
 	score -= assignedCount * (wounded ? PLAYER_AI_WOUNDED_OVERFOCUS_PENALTY : PLAYER_AI_NORMAL_OVERFOCUS_PENALTY);
 	return score;
@@ -299,7 +306,12 @@ int PlayerFactionPlanner::scoreAssignment(BattleUnit *actor, const PlayerFaction
 
 void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 {
-	_plan.turn = _save->getTurn();
+	const int buildTurn = _save->getTurn();
+	const bool reuseTurnAssignments = _plan.turn == buildTurn;
+	const std::map<int, BattleUnit*> previousAssignments = reuseTurnAssignments
+		? _plan.assignedTargetByUnitId
+		: std::map<int, BattleUnit*>();
+	_plan.turn = buildTurn;
 	_plan.cycle++;
 	_plan.allies.clear();
 	_plan.enemies.clear();
@@ -469,7 +481,17 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	const bool squadBadlyExposed = _plan.exposedAllies >= std::max(PLAYER_AI_BADLY_EXPOSED_MIN_ALLIES, activeAllies / PLAYER_AI_BADLY_EXPOSED_DIVISOR);
 	const bool squadWoundedUnderContact = _plan.woundedAllies > 0 && _plan.exposedAllies > 0;
 	const bool lastEnemies = _plan.activeHostiles <= PLAYER_AI_LAST_ENEMY_LIMIT;
-	const bool lateHunt = _save->getTurn() >= PLAYER_AI_LATE_HUNT_TURN && activeAllies > 0 && _plan.activeHostiles <= std::max(PLAYER_AI_HIDDEN_CONTACT_LIMIT, activeAllies + 1);
+	const bool lateHunt = _save->getTurn() >= PLAYER_AI_LATE_HUNT_TURN && activeAllies > 0
+		&& _plan.activeHostiles <= std::min(PLAYER_AI_HIDDEN_CONTACT_LIMIT, activeAllies + 1);
+	const bool smallForceHunt = mostlyHidden
+		&& _save->getTurn() >= PLAYER_AI_SMALL_FORCE_HUNT_TURN
+		&& _plan.activeHostiles <= PLAYER_AI_SMALL_FORCE_HUNT_LIMIT
+		&& _plan.activeHostiles <= activeAllies + (_plan.activeHostiles <= 4 ? 1 : 0);
+	const bool loneGuerrilla = mostlyHidden
+		&& _save->getTurn() >= PLAYER_AI_LONE_GUERRILLA_TURN
+		&& activeAllies > 0 && activeAllies <= 2
+		&& _plan.activeHostiles <= PLAYER_AI_LONE_GUERRILLA_HOSTILE_LIMIT
+		&& _plan.activeHostiles <= activeAllies + 1;
 	const bool earlyHiddenPressure = _save->getTurn() <= PLAYER_AI_EARLY_PRESSURE_TURN_LIMIT && mostlyHidden && activeAllies >= PLAYER_AI_EARLY_PRESSURE_MIN_ALLIES && _plan.activeHostiles > PLAYER_AI_LAST_ENEMY_LIMIT;
 	const bool realSurvivalPressure = activeAllies <= PLAYER_AI_SURVIVAL_ALLY_LIMIT
 		|| (outnumbered && (_plan.visibleContacts > 0 || _plan.exposedAllies > 0 || _plan.woundedAllies >= std::max(PLAYER_AI_BADLY_EXPOSED_MIN_ALLIES, activeAllies / PLAYER_AI_SURVIVAL_WOUNDED_DIVISOR)))
@@ -487,7 +509,11 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	{
 		_plan.strategy = PFS_INITIAL_DEPLOY;
 	}
-	else if (lastEnemies || lateHunt)
+	else if (loneGuerrilla)
+	{
+		_plan.strategy = PFS_SKIRMISH;
+	}
+	else if (lastEnemies || smallForceHunt || lateHunt)
 	{
 		_plan.strategy = PFS_HUNT_LAST_ENEMY;
 	}
@@ -531,43 +557,54 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 	}
 
 	std::map<int, int> assignedCountByEnemyId;
+	auto maxAssigneesFor = [&](const PlayerFactionEnemyContact &contact) -> int
+	{
+		int maxAssignees = contact.visibleContact
+			? std::max(PLAYER_AI_VISIBLE_MIN_ASSIGNEES, (int)contact.canShootBy.size() + std::max(0, (int)contact.visibleBy.size() - (int)contact.canShootBy.size()) / PLAYER_AI_VISIBLE_EXTRA_ASSIGNEE_DIVISOR)
+			: ((_plan.enemies.size() == 1 || _save->getTurn() >= PLAYER_AI_HIDDEN_ASSIGN_ALL_TURN)
+				? (int)_plan.allies.size()
+				: std::min((int)_plan.allies.size(), (contact.canShootBy.empty() && contact.visibleBy.empty()) ? PLAYER_AI_HIDDEN_BLIND_ASSIGNEE_LIMIT : PLAYER_AI_HIDDEN_SEEN_ASSIGNEE_LIMIT));
+		if (!contact.visibleContact && (_plan.strategy == PFS_DEFEND_LINE || _plan.strategy == PFS_HOLD_REACTION || _plan.strategy == PFS_SURVIVE || _plan.strategy == PFS_SKIRMISH))
+		{
+			maxAssignees = std::min(maxAssignees, _plan.strategy == PFS_SURVIVE ? PLAYER_AI_HIDDEN_SURVIVE_ASSIGNEE_LIMIT : PLAYER_AI_HIDDEN_DEFENSIVE_ASSIGNEE_LIMIT);
+		}
+		else if (!contact.visibleContact && _plan.strategy == PFS_SIEGE_ROOM)
+		{
+			maxAssignees = std::min(maxAssignees, PLAYER_AI_SIEGE_HIDDEN_ASSIGNEE_LIMIT);
+		}
+		if (contact.visibleContact && (contact.threatScore >= PLAYER_AI_DANGEROUS_VISIBLE_THREAT || contact.canShootBy.size() >= PLAYER_AI_ROOM_CONTROLLED_OPENING_LIMIT))
+		{
+			maxAssignees = std::max(maxAssignees, PLAYER_AI_DANGEROUS_VISIBLE_ASSIGNEE_LIMIT);
+		}
+		const int focusHealthLimit = std::max(PLAYER_AI_WOUNDED_HEALTH_LIMIT,
+			(int)contact.enemy->getBaseStats()->health * 3 / 5);
+		if (contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= focusHealthLimit)
+		{
+			maxAssignees = std::max(maxAssignees, PLAYER_AI_WOUNDED_ASSIGNEE_LIMIT);
+		}
+		return maxAssignees;
+	};
 	for (auto* ally : _plan.allies)
 	{
 		PlayerFactionEnemyContact *bestContact = 0;
 		int bestScore = PLAYER_AI_REJECT_SCORE;
+		bool stickyAssignment = false;
 		for (auto &contact : _plan.enemies)
 		{
 			const bool canShoot = std::find(contact.canShootBy.begin(), contact.canShootBy.end(), ally) != contact.canShootBy.end();
 			const bool canSee = std::find(contact.visibleBy.begin(), contact.visibleBy.end(), ally) != contact.visibleBy.end();
+			const bool lastEnemyFactionSupport = contact.visibleContact
+				&& _plan.strategy == PFS_HUNT_LAST_ENEMY
+				&& _plan.activeHostiles <= 2;
 			if (!canShoot && !canSee)
 			{
-				if (contact.visibleContact)
+				if (contact.visibleContact && !lastEnemyFactionSupport)
 				{
 					continue;
 				}
 			}
 			const int assignedCount = assignedCountByEnemyId[contact.enemy->getId()];
-			int maxAssignees = contact.visibleContact
-				? std::max(PLAYER_AI_VISIBLE_MIN_ASSIGNEES, (int)contact.canShootBy.size() + std::max(0, (int)contact.visibleBy.size() - (int)contact.canShootBy.size()) / PLAYER_AI_VISIBLE_EXTRA_ASSIGNEE_DIVISOR)
-				: ((_plan.enemies.size() == 1 || _save->getTurn() >= PLAYER_AI_HIDDEN_ASSIGN_ALL_TURN)
-					? (int)_plan.allies.size()
-					: std::min((int)_plan.allies.size(), (contact.canShootBy.empty() && contact.visibleBy.empty()) ? PLAYER_AI_HIDDEN_BLIND_ASSIGNEE_LIMIT : PLAYER_AI_HIDDEN_SEEN_ASSIGNEE_LIMIT));
-			if (!contact.visibleContact && (_plan.strategy == PFS_DEFEND_LINE || _plan.strategy == PFS_HOLD_REACTION || _plan.strategy == PFS_SURVIVE || _plan.strategy == PFS_SKIRMISH))
-			{
-				maxAssignees = std::min(maxAssignees, _plan.strategy == PFS_SURVIVE ? PLAYER_AI_HIDDEN_SURVIVE_ASSIGNEE_LIMIT : PLAYER_AI_HIDDEN_DEFENSIVE_ASSIGNEE_LIMIT);
-			}
-			else if (!contact.visibleContact && _plan.strategy == PFS_SIEGE_ROOM)
-			{
-				maxAssignees = std::min(maxAssignees, PLAYER_AI_SIEGE_HIDDEN_ASSIGNEE_LIMIT);
-			}
-			if (contact.visibleContact && (contact.threatScore >= PLAYER_AI_DANGEROUS_VISIBLE_THREAT || contact.canShootBy.size() >= PLAYER_AI_ROOM_CONTROLLED_OPENING_LIMIT))
-			{
-				maxAssignees = std::max(maxAssignees, PLAYER_AI_DANGEROUS_VISIBLE_ASSIGNEE_LIMIT);
-			}
-			if (contact.enemy->getHealth() > 0 && contact.enemy->getHealth() <= PLAYER_AI_WOUNDED_HEALTH_LIMIT)
-			{
-				maxAssignees = std::max(maxAssignees, PLAYER_AI_WOUNDED_ASSIGNEE_LIMIT);
-			}
+			const int maxAssignees = maxAssigneesFor(contact);
 			if (assignedCount >= maxAssignees && !canShoot)
 			{
 				continue;
@@ -579,12 +616,52 @@ void PlayerFactionPlanner::build(BattleUnit *activeUnit) const
 				bestContact = &contact;
 			}
 		}
+		if (reuseTurnAssignments)
+		{
+			auto previous = previousAssignments.find(ally->getId());
+			PlayerFactionEnemyContact *previousContact = 0;
+			if (previous != previousAssignments.end() && previous->second && !previous->second->isOut())
+			{
+				for (auto &contact : _plan.enemies)
+				{
+					if (contact.enemy == previous->second)
+					{
+						previousContact = &contact;
+						break;
+					}
+				}
+			}
+			if (previousContact)
+			{
+				const bool previousCanShoot = std::find(previousContact->canShootBy.begin(), previousContact->canShootBy.end(), ally) != previousContact->canShootBy.end();
+				const bool previousCanSee = std::find(previousContact->visibleBy.begin(), previousContact->visibleBy.end(), ally) != previousContact->visibleBy.end();
+				const bool urgentVisibleSwitch = bestContact && bestContact != previousContact
+					&& bestContact->visibleContact && !previousContact->visibleContact;
+				const bool urgentThreatSwitch = bestContact && bestContact != previousContact
+					&& bestContact->canShootAllies > previousContact->canShootAllies + 1;
+				const int previousAssignedCount = assignedCountByEnemyId[previousContact->enemy->getId()];
+				const int previousScore = scoreAssignment(ally, *previousContact, previousAssignedCount);
+				const bool previousWithinCap = previousCanShoot || previousAssignedCount < maxAssigneesFor(*previousContact);
+				const bool previousFactionSupport = previousContact->visibleContact
+					&& _plan.strategy == PFS_HUNT_LAST_ENEMY && _plan.activeHostiles <= 2;
+				const bool previousStillActionable = previousWithinCap
+					&& (previousCanShoot || previousCanSee || !previousContact->visibleContact || previousFactionSupport);
+				if (previousStillActionable && !urgentVisibleSwitch && !urgentThreatSwitch
+					&& (bestContact == previousContact || previousScore + PLAYER_AI_ASSIGNMENT_SWITCH_MARGIN >= bestScore))
+				{
+					bestContact = previousContact;
+					bestScore = previousScore;
+					stickyAssignment = true;
+				}
+			}
+		}
 		if (bestContact)
 		{
 			_plan.assignedTargetByUnitId[ally->getId()] = bestContact->enemy;
 			assignedCountByEnemyId[bestContact->enemy->getId()]++;
 			std::ostringstream reason;
 			reason << "score=" << bestScore
+				<< ", sticky=" << stickyAssignment
 				<< ", threat=" << bestContact->threatScore
 				<< ", focus=" << bestContact->focusScore
 				<< ", room=" << bestContact->roomId
